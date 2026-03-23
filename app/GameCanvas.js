@@ -60,7 +60,8 @@ export const LEVELS = [
   { name: 'GapRunner Master', walls: 20, shapes: [0,1,2], speed: 50, spacing: 14, gapPad: 1.00, tol: 0.03, drift: 1.5, vDrift: 1.2, dbl: true, rot: true, speedVar: 0.5 },
 ]
 
-function getLevelDef(level) {
+function getLevelDef(level, customLevel) {
+  if (customLevel) return customLevel
   const idx = Math.min(level - 1, LEVELS.length - 1)
   return LEVELS[idx]
 }
@@ -434,7 +435,8 @@ function SpeedTrail({ gameRef }) {
       ref.position.y += (s.playerY - ref.position.y) * (1 - lag)
       ref.position.z = 0.3 + i * 0.5
       mat.color.lerp(targetCol.current, 0.15)
-      mat.opacity = speedFrac * (0.25 - i * 0.04)
+      const moveDist = Math.abs(s.playerX - ref.position.x) + Math.abs(s.playerY - ref.position.y)
+      mat.opacity = Math.min(0.4, speedFrac * (0.25 - i * 0.04) + moveDist * 0.15)
     }
   })
 
@@ -552,7 +554,7 @@ function DeathExplosion({ deathRef }) {
 
 // ── Cartoon character ─────────────────────────────────────────────────────────
 
-function PlayerMesh({ gameRef, playerVisibleRef }) {
+function PlayerMesh({ gameRef, playerVisibleRef, invincibleRef }) {
   const groupRef      = useRef()
   const bodyRef       = useRef()
   const faceRef       = useRef()
@@ -612,6 +614,15 @@ function PlayerMesh({ gameRef, playerVisibleRef }) {
     if (!groupRef.current || !bodyRef.current || !faceRef.current) return
 
     groupRef.current.visible = playerVisibleRef.current
+
+    // Invincibility flash
+    if (invincibleRef && invincibleRef.current) {
+      bodyMat.opacity = Math.sin(state.clock.elapsedTime * 12) > 0 ? 1 : 0.3
+      bodyMat.transparent = true
+    } else if (bodyMat.transparent) {
+      bodyMat.opacity = 1
+      bodyMat.transparent = false
+    }
 
     const s     = gameRef.current
     const shape = SHAPES[s.shapeIndex]
@@ -697,7 +708,12 @@ function PlayerMesh({ gameRef, playerVisibleRef }) {
       groupRef.current.position.y = s.playerY
     }
 
-    targetCol.current.set(shape.color)
+    const skinColor = s.skinColor || shape.color
+    if (skinColor === 'rainbow') {
+      targetCol.current.setHSL((state.clock.elapsedTime * 0.2) % 1, 0.8, 0.55)
+    } else {
+      targetCol.current.set(skinColor)
+    }
     bodyMat.color.lerp(targetCol.current, 0.18)
     bodyMat.emissive.lerp(targetCol.current, 0.18)
   })
@@ -792,6 +808,7 @@ function DragHandler({ gameRef, isDraggingRef, pointerNDCRef }) {
   const plane        = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), [])
   const intersection = useMemo(() => new THREE.Vector3(), [])
   const ndc          = useMemo(() => new THREE.Vector2(), [])
+  const dragStart    = useRef(null)
 
   useFrame(() => {
     const s = gameRef.current
@@ -808,9 +825,14 @@ function DragHandler({ gameRef, isDraggingRef, pointerNDCRef }) {
       ndc.set(pointerNDCRef.current.x, pointerNDCRef.current.y)
       raycaster.setFromCamera(ndc, camera)
       if (raycaster.ray.intersectPlane(plane, intersection)) {
-        s.playerX = intersection.x
-        s.playerY = intersection.y
+        if (!dragStart.current) {
+          dragStart.current = { x: intersection.x, y: intersection.y, px: s.playerX, py: s.playerY }
+        }
+        s.playerX = dragStart.current.px + (intersection.x - dragStart.current.x)
+        s.playerY = dragStart.current.py + (intersection.y - dragStart.current.y)
       }
+    } else {
+      dragStart.current = null
     }
 
     s.playerX = Math.max(-CW / 2 + halfW, Math.min(CW / 2 - halfW, s.playerX))
@@ -822,17 +844,17 @@ function DragHandler({ gameRef, isDraggingRef, pointerNDCRef }) {
 
 // ── Game loop (level-driven) ──────────────────────────────────────────────────
 
-function GameScene({ gameRef, setWallIds, setScore, dangerRef, onGameOver, onEvent, particleBurstsRef, deathRef, playerVisibleRef, timeScaleRef }) {
+function GameScene({ gameRef, setWallIds, setScore, dangerRef, onGameOver, onEvent, particleBurstsRef, deathRef, playerVisibleRef, timeScaleRef, invincibleRef }) {
   useFrame((state, delta) => {
     const s = gameRef.current
     if (s.gamePhase !== 'PLAYING') return
 
     const tScale = timeScaleRef ? timeScaleRef.current.value : 1.0
     const dt   = Math.min(delta, 0.05) * tScale
-    const lvl  = getLevelDef(s.level)
+    const lvl  = getLevelDef(s.level, s.customLevel)
 
-    // Apply level speed
-    s.speed = lvl.speed
+    // Apply level speed (ramps within each level)
+    s.speed = lvl.speed + Math.min(s.wallsCleared * 0.3, lvl.speed * 0.15)
 
     // Update wall drift and movement
     const clock = state.clock.elapsedTime
@@ -933,7 +955,7 @@ function GameScene({ gameRef, setWallIds, setScore, dangerRef, onGameOver, onEve
     for (const w of s.walls) {
       if (!w.collisionChecked && w.z >= COLLISION_Z) {
         w.collisionChecked = true
-        if (checkCollision(w, s.shapeIndex, s.playerX, s.playerY, s.playerScale, lvl)) {
+        if (checkCollision(w, s.shapeIndex, s.playerX, s.playerY, s.playerScale, lvl) && !(invincibleRef && invincibleRef.current)) {
           s.gamePhase  = 'GAME_OVER'
           s.gameOverAt = Date.now()
           if (dangerRef.current) dangerRef.current.style.opacity = '0'
@@ -967,27 +989,33 @@ function GameScene({ gameRef, setWallIds, setScore, dangerRef, onGameOver, onEve
       }
       if (!w.passed && w.z >= PASS_Z) {
         w.passed = true
-        s.streak++
         s.wallsCleared++
-
-        // Combo multiplier
-        const mult = s.streak < 5 ? 1 : s.streak < 10 ? 2 : s.streak < 20 ? 3 : 4
-        s.levelMaxMult = Math.max(s.levelMaxMult || 0, mult)
 
         // Near-miss detection
         const margin = computeMargins(w, s.shapeIndex, s.playerX, s.playerY, s.playerScale, lvl)
         const nearMiss = margin < 0.3
 
-        // Score based on fit precision: max 1000 at perfect fit, min ~200 when shrunk to 0.5
+        // Fit precision
         const scale = s.playerScale || 1
         const gap = SHAPES[w.gapShapeIndex]
         const gapArea = gap.wFrac * CW * lvl.gapPad * gap.hFrac * CH * lvl.gapPad
         const player = SHAPES[s.shapeIndex]
         const playerArea = player.wFrac * CW * scale * player.hFrac * CH * scale
-        const fitRatio = Math.min(playerArea / gapArea, 1) // 0..1, 1 = perfect fit
+        const fitRatio = Math.min(playerArea / gapArea, 1)
         s.levelFitSum = (s.levelFitSum || 0) + fitRatio
         s.levelFitCount = (s.levelFitCount || 0) + 1
-        const basePoints = Math.round(200 + 800 * fitRatio) // 200..1000
+
+        // Combo: break on fits below GREAT (70%)
+        if (fitRatio >= 0.7) {
+          s.streak++
+        } else {
+          if (s.streak >= 5) onEvent({ type: 'COMBO_BREAK', streak: s.streak })
+          s.streak = 0
+        }
+        const mult = s.streak < 5 ? 1 : s.streak < 10 ? 2 : s.streak < 20 ? 3 : 4
+        s.levelMaxMult = Math.max(s.levelMaxMult || 0, mult)
+
+        const basePoints = Math.round(200 + 800 * fitRatio)
         s.score += basePoints * mult
         setScore(s.score)
 
@@ -1025,12 +1053,53 @@ function GameScene({ gameRef, setWallIds, setScore, dangerRef, onGameOver, onEve
   return null
 }
 
+// ── Gap preview (floor shadow) ───────────────────────────────────────────
+
+function GapPreview({ gameRef }) {
+  const meshRef = useRef()
+  const matRef = useRef()
+  const targetColor = useRef(new THREE.Color())
+
+  useFrame(() => {
+    if (!meshRef.current || !matRef.current) return
+    const s = gameRef.current
+    if (s.gamePhase !== 'PLAYING' || s.walls.length === 0) {
+      matRef.current.opacity = 0
+      return
+    }
+    const upcoming = s.walls.filter(w => !w.passed && w.z < -2)
+    if (upcoming.length === 0) { matRef.current.opacity = 0; return }
+    upcoming.sort((a, b) => b.z - a.z)
+    const w = upcoming[0]
+    const lvl = getLevelDef(s.level, s.customLevel)
+    const shape = SHAPES[w.gapShapeIndex]
+    const gapW = shape.wFrac * CW * lvl.gapPad
+
+    const gx = w.gapOffsetX + (w.driftX || 0)
+    meshRef.current.position.x = gx
+    meshRef.current.scale.x = gapW
+
+    const dist = Math.abs(w.z)
+    const opacity = Math.max(0, Math.min(0.25, (1 - dist / 30) * 0.35))
+    matRef.current.opacity = opacity
+    targetColor.current.set(shape.color)
+    matRef.current.color.lerp(targetColor.current, 0.15)
+  })
+
+  return (
+    <mesh ref={meshRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, -CH / 2 + 0.03, 0.5]}>
+      <planeGeometry args={[1, 1.5]} />
+      <meshBasicMaterial ref={matRef} color="white" transparent opacity={0} side={THREE.DoubleSide} depthWrite={false} />
+    </mesh>
+  )
+}
+
 // ── Canvas export ─────────────────────────────────────────────────────────────
 
 export default function GameCanvas({
   gameRef, wallIds, setWallIds, setScore, dangerRef, onGameOver, onEvent,
   isDraggingRef, pointerNDCRef, particleBurstsRef, deathRef, playerVisibleRef,
-  shakeRef, timeScaleRef,
+  shakeRef, timeScaleRef, invincibleRef,
 }) {
   return (
     <Canvas
@@ -1051,10 +1120,11 @@ export default function GameCanvas({
       <hemisphereLight args={['#87CEEB', '#A8E6F0', 0.5]} />
 
       <TrackScene gameRef={gameRef} />
-      <PlayerMesh gameRef={gameRef} playerVisibleRef={playerVisibleRef} />
+      <PlayerMesh gameRef={gameRef} playerVisibleRef={playerVisibleRef} invincibleRef={invincibleRef} />
       <PlayerLight gameRef={gameRef} />
       <SpeedTrail gameRef={gameRef} />
       <SuccessParticles gameRef={gameRef} particleBurstsRef={particleBurstsRef} />
+      <GapPreview gameRef={gameRef} />
       <DeathExplosion deathRef={deathRef} />
 
       <DragHandler
@@ -1086,6 +1156,7 @@ export default function GameCanvas({
         deathRef={deathRef}
         playerVisibleRef={playerVisibleRef}
         timeScaleRef={timeScaleRef}
+        invincibleRef={invincibleRef}
       />
     </Canvas>
   )

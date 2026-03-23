@@ -8,6 +8,53 @@ import SoundManager from './SoundManager'
 const GameCanvas = dynamic(() => import('./GameCanvas'), { ssr: false })
 const MenuCanvas = dynamic(() => import('./MenuCanvas'), { ssr: false })
 
+// ── Skins ─────────────────────────────────────────────────────────────────────
+
+const SKINS = [
+  { name: 'Classic',  color: null,      threshold: 0 },
+  { name: 'Golden',   color: '#FFD700', threshold: 10 },
+  { name: 'Rose',     color: '#FF6B8A', threshold: 25 },
+  { name: 'Electric', color: '#00E5FF', threshold: 45 },
+  { name: 'Shadow',   color: '#2C2C2C', threshold: 60 },
+  { name: 'Rainbow',  color: 'rainbow', threshold: 80 },
+]
+
+// ── Daily challenge generator ─────────────────────────────────────────────────
+
+function getDailyChallenge() {
+  const today = new Date()
+  const seed = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate()
+  let s = seed
+  const r = () => { s = (s * 9301 + 49297) % 233280; return s / 233280 }
+
+  return {
+    name: `Daily ${(today.getMonth() + 1)}/${today.getDate()}`,
+    walls: 8 + Math.floor(r() * 8),
+    shapes: [0, 1, 2],
+    speed: 18 + Math.floor(r() * 20),
+    spacing: 20 + Math.floor(r() * 10),
+    gapPad: 1.05 + r() * 0.3,
+    tol: 0.08 + r() * 0.08,
+    drift: r() > 0.5 ? r() * 0.8 : 0,
+    vDrift: r() > 0.6 ? r() * 0.6 : 0,
+    dbl: r() > 0.5,
+    speedVar: r() > 0.6 ? r() * 0.3 : 0,
+    rot: r() > 0.7,
+  }
+}
+
+function getDailySeed() {
+  const today = new Date()
+  return `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`
+}
+
+// ── Default stats ─────────────────────────────────────────────────────────────
+
+const DEFAULT_STATS = {
+  totalGames: 0, totalWalls: 0, totalScore: 0,
+  bestStreak: 0, levelsCompleted: 0, timePlayed: 0,
+}
+
 // ── Game state factory ────────────────────────────────────────────────────────
 
 function initGame(startLevel = 1) {
@@ -30,6 +77,9 @@ function initGame(startLevel = 1) {
     levelMaxMult:       0,
     levelFitSum:        0,
     levelFitCount:      0,
+    customLevel:        null,
+    skinColor:          null,
+    startTime:          Date.now(),
   }
 }
 
@@ -258,6 +308,9 @@ export default function GapRunner() {
   const particleBurstsRef = useRef([])
   const deathRef         = useRef(null)
   const playerVisibleRef = useRef(true)
+  const usedContinueRef  = useRef(false)
+  const deathSnapshotRef = useRef(null)
+  const invincibleRef    = useRef(false)
   const shakeRef         = useRef({ intensity: 0, duration: 0, elapsed: 999 })
   const timeScaleRef     = useRef({ value: 1.0 })
 
@@ -285,6 +338,13 @@ export default function GapRunner() {
   const [completedStars, setCompletedStars] = useState(0)
   const [resizeTip,     setResizeTip]     = useState(false)
   const resizeTipShownRef = useRef(false)
+  const [showingAd,     setShowingAd]     = useState(false)
+  const [adCountdown,   setAdCountdown]   = useState(0)
+  const [canContinue,   setCanContinue]   = useState(false)
+  const [selectedSkin,  setSelectedSkin]  = useState(0)
+  const [stats,         setStats]         = useState(DEFAULT_STATS)
+  const [dailyBest,     setDailyBest]     = useState(0)
+  const [comboBreakText, setComboBreakText] = useState('')
 
   // Load saved data
   useEffect(() => {
@@ -295,6 +355,12 @@ export default function GapRunner() {
       if (lvl) setSavedLevel(Math.max(1, parseInt(lvl, 10) || 1))
       const stars = localStorage.getItem('gaprunner_stars')
       if (stars) setLevelStars(JSON.parse(stars))
+      const savedStats = localStorage.getItem('gaprunner_stats')
+      if (savedStats) setStats(prev => ({ ...prev, ...JSON.parse(savedStats) }))
+      const savedSkin = localStorage.getItem('gaprunner_skin')
+      if (savedSkin) setSelectedSkin(parseInt(savedSkin, 10) || 0)
+      const dBest = localStorage.getItem('gaprunner_daily_' + getDailySeed())
+      if (dBest) setDailyBest(parseInt(dBest, 10) || 0)
     } catch (_) {}
   }, [])
 
@@ -350,14 +416,31 @@ export default function GapRunner() {
     if (soundRef.current) soundRef.current.playShapeChange()
   }, [])
 
+  // ── Update stats helper ───────────────────────────────────────────────────
+  const updateStats = useCallback((updates) => {
+    setStats(prev => {
+      const next = { ...prev }
+      for (const [k, v] of Object.entries(updates)) {
+        if (k === 'bestStreak') next[k] = Math.max(next[k] || 0, v)
+        else next[k] = (next[k] || 0) + v
+      }
+      try { localStorage.setItem('gaprunner_stats', JSON.stringify(next)) } catch (_) {}
+      return next
+    })
+  }, [])
+
   // ── Start game from a specific level ───────────────────────────────────────
   const startGame = useCallback((fromLevel = 1) => {
     const fresh = initGame(fromLevel)
     fresh.gamePhase = 'PLAYING'
+    fresh.skinColor = SKINS[selectedSkin] ? SKINS[selectedSkin].color : null
     gameRef.current = fresh
     playerVisibleRef.current = true
     particleBurstsRef.current = []
     deathRef.current = null
+    usedContinueRef.current = false
+    deathSnapshotRef.current = null
+    setCanContinue(false)
     setWallIds([])
     setShapeIndex(0)
     setScore(0)
@@ -372,7 +455,7 @@ export default function GapRunner() {
     soundRef.current.resume()
     const lvlDef = LEVELS[Math.min(fromLevel - 1, LEVELS.length - 1)]
     soundRef.current.startMusic(100 + lvlDef.speed * 1.5)
-  }, [])
+  }, [selectedSkin])
 
   // ── Advance to next level from LEVEL_COMPLETE screen ────────────────────────
   const handleNextLevel = useCallback(() => {
@@ -406,6 +489,105 @@ export default function GapRunner() {
     if (soundRef.current) soundRef.current.stopMusic()
   }, [])
 
+  // ── Continue from death (after ad) ────────────────────────────────────────
+  const continueFromDeath = useCallback(() => {
+    const snap = deathSnapshotRef.current
+    if (!snap) return
+
+    // Restore game state
+    const s = gameRef.current
+    s.walls = snap.walls
+    s.score = snap.score
+    s.speed = snap.speed
+    s.shapeIndex = snap.shapeIndex
+    s.lastWallShapeIndex = snap.lastWallShapeIndex
+    s.wallIdSeq = snap.wallIdSeq
+    s.playerX = 0
+    s.playerY = 0
+    s.playerScale = 1.0
+    s.streak = 0
+    s.level = snap.level
+    s.wallsCleared = snap.wallsCleared
+    s.levelMaxMult = snap.levelMaxMult
+    s.levelFitSum = snap.levelFitSum
+    s.levelFitCount = snap.levelFitCount
+    s.gamePhase = 'PLAYING'
+
+    playerVisibleRef.current = true
+    deathRef.current = null
+    particleBurstsRef.current = []
+    usedContinueRef.current = true
+    deathSnapshotRef.current = null
+    setCanContinue(false)
+
+    // Grant 3 seconds of invincibility
+    invincibleRef.current = true
+    setTimeout(() => { invincibleRef.current = false }, 3000)
+
+    setScore(snap.score)
+    setStreak(0)
+    setLevel(snap.level)
+    setLevelName(LEVELS[Math.min(snap.level - 1, LEVELS.length - 1)].name)
+    setShapeIndex(snap.shapeIndex)
+    setWallIds(snap.walls.map(w => ({ id: w.id, gapShapeIndex: w.gapShapeIndex, gapOffsetX: w.gapOffsetX, gapOffsetY: w.gapOffsetY, gapPad: w.gapPad })))
+    setDisplayPhase('PLAYING')
+
+    if (!soundRef.current) soundRef.current = new SoundManager()
+    soundRef.current.resume()
+    const lvlDef = LEVELS[Math.min(snap.level - 1, LEVELS.length - 1)]
+    soundRef.current.startMusic(100 + lvlDef.speed * 1.5)
+  }, [])
+
+  const startAdThenContinue = useCallback(() => {
+    setShowingAd(true)
+    setAdCountdown(3)
+    let count = 3
+    const timer = setInterval(() => {
+      count--
+      setAdCountdown(count)
+      if (count <= 0) {
+        clearInterval(timer)
+        setShowingAd(false)
+        continueFromDeath()
+      }
+    }, 1000)
+  }, [continueFromDeath])
+
+  // ── Daily challenge ──────────────────────────────────────────────────────
+  const startDailyChallenge = useCallback(() => {
+    const daily = getDailyChallenge()
+    const fresh = initGame(1)
+    fresh.gamePhase = 'PLAYING'
+    fresh.customLevel = daily
+    fresh.skinColor = SKINS[selectedSkin] ? SKINS[selectedSkin].color : null
+    gameRef.current = fresh
+    playerVisibleRef.current = true
+    particleBurstsRef.current = []
+    deathRef.current = null
+    usedContinueRef.current = false
+    deathSnapshotRef.current = null
+    setCanContinue(false)
+    setWallIds([])
+    setShapeIndex(0)
+    setScore(0)
+    setStreak(0)
+    setLevel(1)
+    setLevelName(daily.name)
+    setMilestoneText('')
+    setLevelUpText('')
+    setDisplayPhase('PLAYING')
+
+    if (!soundRef.current) soundRef.current = new SoundManager()
+    soundRef.current.resume()
+    soundRef.current.startMusic(100 + daily.speed * 1.5)
+  }, [selectedSkin])
+
+  // ── Skin selection ───────────────────────────────────────────────────────
+  const selectSkin = useCallback((idx) => {
+    setSelectedSkin(idx)
+    try { localStorage.setItem('gaprunner_skin', String(idx)) } catch (_) {}
+  }, [])
+
   // ── Pause / Resume ────────────────────────────────────────────────────────
   const togglePause = useCallback(() => {
     const s = gameRef.current
@@ -433,6 +615,27 @@ export default function GapRunner() {
     setFinalScore(val)
     setFinalLevel(gameRef.current.level)
     setCollisionInfo(colInfo || null)
+
+    // Save snapshot for continue-from-death
+    const s = gameRef.current
+    deathSnapshotRef.current = {
+      walls: s.walls.filter(w => w.z < -2), // keep walls that haven't passed yet
+      score: s.score,
+      speed: s.speed,
+      shapeIndex: s.shapeIndex,
+      lastWallShapeIndex: s.lastWallShapeIndex,
+      wallIdSeq: s.wallIdSeq,
+      playerX: s.playerX,
+      playerY: s.playerY,
+      playerScale: s.playerScale,
+      streak: s.streak,
+      level: s.level,
+      wallsCleared: s.wallsCleared,
+      levelMaxMult: s.levelMaxMult,
+      levelFitSum: s.levelFitSum,
+      levelFitCount: s.levelFitCount,
+    }
+    setCanContinue(!usedContinueRef.current)
     setDisplayPhase('GAME_OVER')
 
     // Save level progress (the level they reached)
@@ -447,11 +650,36 @@ export default function GapRunner() {
       }
     } catch (_) {}
 
+    // Haptic feedback
+    try { navigator.vibrate && navigator.vibrate([100, 50, 100]) } catch (_) {}
+
+    // Track stats
+    const elapsed = Math.round((Date.now() - s.startTime) / 1000)
+    updateStats({
+      totalGames: 1,
+      totalWalls: s.wallsCleared,
+      totalScore: val,
+      bestStreak: s.streak,
+      timePlayed: elapsed,
+    })
+
+    // Daily challenge best
+    if (s.customLevel) {
+      try {
+        const key = 'gaprunner_daily_' + getDailySeed()
+        const prev = parseInt(localStorage.getItem(key) || '0', 10)
+        if (val > prev) {
+          localStorage.setItem(key, String(val))
+          setDailyBest(val)
+        }
+      } catch (_) {}
+    }
+
     if (soundRef.current) {
       soundRef.current.playDeath()
       soundRef.current.stopMusic()
     }
-  }, [saveLevelProgress])
+  }, [saveLevelProgress, updateStats])
 
   // ── Game events ────────────────────────────────────────────────────────────
   const handleEvent = useCallback((event) => {
@@ -460,12 +688,14 @@ export default function GapRunner() {
     switch (event.type) {
       case 'PASS':
         if (sm) sm.playPass()
+        try { navigator.vibrate && navigator.vibrate(15) } catch (_) {}
         if (event.nearMiss) {
           if (sm) sm.playNearMiss()
           setNearMissFlash(true)
           triggerShake(0.25, 0.15)
           triggerFreeze(60)
           setTimeout(() => setNearMissFlash(false), 600)
+          try { navigator.vibrate && navigator.vibrate([30, 20, 30]) } catch (_) {}
         }
         setStreak(event.streak)
         setMultiplier(event.multiplier || 1)
@@ -477,6 +707,15 @@ export default function GapRunner() {
           setResizeTip(true)
           setTimeout(() => setResizeTip(false), 4000)
         }
+        break
+
+      case 'COMBO_BREAK':
+        if (sm) sm.playComboBreak()
+        setComboBreakText(`${event.streak}x COMBO LOST!`)
+        setTimeout(() => setComboBreakText(''), 1500)
+        setStreak(0)
+        setMultiplier(1)
+        try { navigator.vibrate && navigator.vibrate([50, 30, 50]) } catch (_) {}
         break
 
       case 'MILESTONE':
@@ -494,14 +733,16 @@ export default function GapRunner() {
         saveStars(event.level, event.stars || 1)
         setDisplayPhase('LEVEL_COMPLETE')
         if (sm) sm.stopMusic()
+        updateStats({ levelsCompleted: 1 })
         break
 
       case 'DEATH':
         triggerShake(0.6, 0.4)
         triggerFreeze(100)
+        try { navigator.vibrate && navigator.vibrate([100, 50, 100]) } catch (_) {}
         break
     }
-  }, [saveLevelProgress, saveStars, triggerShake, triggerFreeze])
+  }, [saveLevelProgress, saveStars, triggerShake, triggerFreeze, updateStats])
 
   // ── Mute toggle ────────────────────────────────────────────────────────────
   const toggleMute = useCallback(() => {
@@ -534,7 +775,7 @@ export default function GapRunner() {
         e.preventDefault()
         const phase = gameRef.current.gamePhase
         if (phase === 'PLAYING' || phase === 'PAUSED') togglePause()
-        else if (displayPhaseRef.current === 'LEVEL_SELECT') setDisplayPhase('MENU')
+        else if (displayPhaseRef.current === 'LEVEL_SELECT' || displayPhaseRef.current === 'STATS') setDisplayPhase('MENU')
         return
       }
       if (e.key === 'ArrowLeft'  || e.key === 'a' || e.key === 'A') { e.preventDefault(); changeShape('prev') }
@@ -649,6 +890,7 @@ export default function GapRunner() {
           playerVisibleRef={playerVisibleRef}
           shakeRef={shakeRef}
           timeScaleRef={timeScaleRef}
+          invincibleRef={invincibleRef}
         />
       </div>
 
@@ -760,6 +1002,17 @@ export default function GapRunner() {
               animation: 'nearMissFade 0.6s ease-out forwards',
             }}>
               CLOSE!
+            </div>
+          )}
+
+          {comboBreakText && (
+            <div style={{
+              position: 'fixed', top: '44%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 15,
+              color: '#D32F2F', fontFamily: 'monospace', fontSize: 'clamp(18px,4vw,30px)', fontWeight: 'bold',
+              textShadow: '0 0 16px rgba(211,47,47,0.6)', pointerEvents: 'none',
+              animation: 'comboBreakFade 1.5s ease-out forwards',
+            }}>
+              {comboBreakText}
             </div>
           )}
 
@@ -1139,15 +1392,89 @@ export default function GapRunner() {
                 >
                   SELECT LEVEL
                 </div>
+
+                <div
+                  onClick={startDailyChallenge}
+                  style={{
+                    width: '100%', padding: '13px 0', textAlign: 'center',
+                    background: 'linear-gradient(135deg, #FF8C00 0%, #FFB74D 100%)',
+                    color: 'white', fontFamily: 'monospace', fontSize: 13, fontWeight: 'bold',
+                    letterSpacing: 1, borderRadius: 12, cursor: 'pointer',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    boxShadow: '0 2px 12px rgba(255,140,0,0.3)',
+                    transition: 'transform 0.12s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.02)' }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
+                >
+                  DAILY CHALLENGE {dailyBest > 0 ? `(Best: ${dailyBest.toLocaleString()})` : ''}
+                </div>
+              </div>
+
+              {/* Skins row */}
+              {(() => {
+                const unlockedStars = Object.values(levelStars).reduce((a, b) => a + b, 0)
+                return (
+                  <div style={{ marginTop: 14, width: '100%', maxWidth: 320 }}>
+                    <div style={{ color: 'rgba(0,0,0,0.35)', fontFamily: 'monospace', fontSize: 10, letterSpacing: 2, marginBottom: 6, textAlign: 'center' }}>
+                      SKINS
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+                      {SKINS.map((skin, i) => {
+                        const unlocked = unlockedStars >= skin.threshold
+                        const active = selectedSkin === i
+                        return (
+                          <div
+                            key={i}
+                            onClick={() => { if (unlocked) selectSkin(i) }}
+                            style={{
+                              width: 36, height: 36, borderRadius: 8, cursor: unlocked ? 'pointer' : 'default',
+                              background: skin.color === 'rainbow'
+                                ? 'linear-gradient(135deg, #FF6B6B, #FFB74D, #81C784, #4FC3F7, #7C4DFF)'
+                                : skin.color || 'linear-gradient(135deg, #4FC3F7, #81C784, #FFB74D)',
+                              border: active ? '3px solid #1A3A5C' : '2px solid rgba(0,0,0,0.1)',
+                              opacity: unlocked ? 1 : 0.3,
+                              transition: 'transform 0.12s',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}
+                            title={unlocked ? skin.name : `${skin.threshold} stars needed`}
+                            onMouseEnter={e => { if (unlocked) e.currentTarget.style.transform = 'scale(1.15)' }}
+                            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
+                          >
+                            {!unlocked && <span style={{ fontSize: 14 }}>{'\uD83D\uDD12'}</span>}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* Stats row */}
+              <div style={{ display: 'flex', gap: 12, marginTop: 14, justifyContent: 'center' }}>
+                <div
+                  onClick={() => setDisplayPhase('STATS')}
+                  style={{
+                    padding: '8px 16px', borderRadius: 10,
+                    background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(0,0,0,0.08)',
+                    color: '#4A6A8A', fontFamily: 'monospace', fontSize: 11, fontWeight: 'bold',
+                    cursor: 'pointer', letterSpacing: 1,
+                    transition: 'transform 0.12s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.05)' }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
+                >
+                  STATS
+                </div>
               </div>
 
               {/* Controls hint — bottom */}
               <p style={{
-                color: 'rgba(0,0,0,0.25)', fontFamily: 'monospace', fontSize: 10, marginTop: 16,
+                color: 'rgba(0,0,0,0.25)', fontFamily: 'monospace', fontSize: 10, marginTop: 12,
                 letterSpacing: 0.5, textAlign: 'center', lineHeight: 1.7,
               }}>
                 Drag to move · Scroll / pinch to resize<br />
-                A / D or ◀ ▶ to change shape
+                A / D or {'\u25C0'} {'\u25B6'} to change shape
               </p>
             </div>
 
@@ -1291,7 +1618,7 @@ export default function GapRunner() {
 
       {/* ═══════════════ GAME OVER ═══════════════ */}
       {displayPhase === 'GAME_OVER' && (
-        <div style={overlayStyle}>
+        <div style={{ ...overlayStyle, animation: 'fadeInOverlay 0.3s ease-out' }}>
           <CollisionDiagram info={collisionInfo} />
 
           <h1 style={{ color: '#D32F2F', fontSize: 'clamp(28px,6vw,52px)', fontFamily: 'monospace', letterSpacing: 4, marginBottom: 16, textShadow: '0 2px 8px rgba(255,255,255,0.4)' }}>
@@ -1309,7 +1636,12 @@ export default function GapRunner() {
             </p>
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center', marginTop: 8, pointerEvents: 'auto' }}>
-            <MenuButton primary onClick={() => startGame(finalLevel)}>
+            {canContinue && (
+              <MenuButton primary onClick={startAdThenContinue}>
+                {'\u25B6'} CONTINUE (WATCH AD)
+              </MenuButton>
+            )}
+            <MenuButton primary={!canContinue} onClick={() => startGame(finalLevel)}>
               RETRY LEVEL {finalLevel}
             </MenuButton>
             <MenuButton onClick={goToMenu}>
@@ -1321,7 +1653,81 @@ export default function GapRunner() {
             @keyframes nearMissFade { 0% { opacity:1; transform: translate(-50%,-50%) scale(1.2) } 100% { opacity:0; transform: translate(-50%,-80%) scale(0.8) } }
             @keyframes milestonePop { 0% { opacity:0; transform: translate(-50%,-50%) scale(0.5) } 15% { opacity:1; transform: translate(-50%,-50%) scale(1.1) } 30% { transform: translate(-50%,-50%) scale(1) } 80% { opacity:1 } 100% { opacity:0; transform: translate(-50%,-60%) scale(0.9) } }
             @keyframes fitPopFloat { 0% { opacity:1; transform: translate(-50%,-50%) scale(1.2) } 20% { transform: translate(-50%,-50%) scale(1) } 70% { opacity:1 } 100% { opacity:0; transform: translate(-50%,-90%) scale(0.85) } }
+            @keyframes comboBreakFade { 0% { opacity:1; transform: translate(-50%,-50%) scale(1.3) } 20% { transform: translate(-50%,-50%) scale(1) } 70% { opacity:1 } 100% { opacity:0; transform: translate(-50%,-70%) scale(0.9) } }
+            @keyframes fadeInOverlay { 0% { opacity:0; transform: scale(0.95) } 100% { opacity:1; transform: scale(1) } }
           `}</style>
+        </div>
+      )}
+
+      {/* ═══════════════ AD OVERLAY ═══════════════ */}
+      {/* ═══════════════ STATS ═══════════════ */}
+      {displayPhase === 'STATS' && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 50,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(200,230,245,0.95)',
+          animation: 'fadeInOverlay 0.3s ease-out',
+          pointerEvents: 'auto',
+        }}>
+          <h1 style={{ color: '#1A3A5C', fontFamily: 'monospace', fontSize: 28, fontWeight: 'bold', letterSpacing: 4, marginBottom: 24 }}>
+            STATISTICS
+          </h1>
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12,
+            maxWidth: 300, width: '90%',
+          }}>
+            {[
+              ['Games Played', stats.totalGames],
+              ['Walls Cleared', stats.totalWalls],
+              ['Total Score', stats.totalScore.toLocaleString()],
+              ['Best Streak', stats.bestStreak],
+              ['Levels Done', stats.levelsCompleted],
+              ['Time Played', `${Math.floor(stats.timePlayed / 60)}m ${stats.timePlayed % 60}s`],
+            ].map(([label, value]) => (
+              <div key={label} style={{
+                padding: '12px 14px', borderRadius: 10,
+                background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(91,141,239,0.15)',
+                textAlign: 'center',
+              }}>
+                <div style={{ color: '#1A3A5C', fontFamily: 'monospace', fontSize: 18, fontWeight: 'bold' }}>{value}</div>
+                <div style={{ color: '#7A9AB8', fontFamily: 'monospace', fontSize: 9, letterSpacing: 1, marginTop: 4 }}>{label.toUpperCase()}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 24 }}>
+            <MenuButton primary onClick={() => setDisplayPhase('MENU')}>
+              BACK
+            </MenuButton>
+          </div>
+        </div>
+      )}
+
+      {showingAd && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 50,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(0,0,0,0.92)',
+        }}>
+          <div style={{
+            background: '#1a1a2e', borderRadius: 16, padding: '40px 48px',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
+            border: '2px solid #333',
+          }}>
+            <p style={{ color: '#aaa', fontFamily: 'monospace', fontSize: 14, letterSpacing: 2 }}>
+              AD PLACEHOLDER
+            </p>
+            <div style={{
+              width: 80, height: 80, borderRadius: '50%',
+              border: '4px solid #4FC3F7', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <span style={{ color: '#4FC3F7', fontFamily: 'monospace', fontSize: 36, fontWeight: 'bold' }}>
+                {adCountdown}
+              </span>
+            </div>
+            <p style={{ color: '#666', fontFamily: 'monospace', fontSize: 12 }}>
+              Resuming in {adCountdown}s...
+            </p>
+          </div>
         </div>
       )}
     </div>

@@ -123,6 +123,12 @@ export default class SoundManager {
     this._sweep(200, 40, 0.4, 'sawtooth', 0.1)
   }
 
+  playComboBreak() {
+    if (!this.ctx) return
+    this._sweep(800, 200, 0.25, 'sawtooth', 0.15)
+    this._tone(150, 0.2, 'square', 0.1)
+  }
+
   playMilestone() {
     if (!this.ctx) return
     // Ascending chime: C5 → E5 → G5
