@@ -133,7 +133,7 @@ function DancingChar({ shapeIndex, posX }) {
     if (!groupRef.current) return
 
     const t = state.clock.getElapsedTime() + phaseOffset
-    const bpm = 3.5
+    const bpm = 2.0
 
     const phase = t * bpm * Math.PI * 2
     const sinP = Math.sin(phase)
@@ -248,7 +248,7 @@ function DanceLights() {
   useFrame((state) => {
     const t = state.clock.getElapsedTime()
     if (l1.current) {
-      l1.current.position.x = -1.8 + Math.sin(t * 1.5) * 0.3
+      l1.current.position.x = -2.6 + Math.sin(t * 1.5) * 0.3
       l1.current.intensity = 3 + Math.sin(t * 3) * 1.5
     }
     if (l2.current) {
@@ -256,16 +256,16 @@ function DanceLights() {
       l2.current.intensity = 3 + Math.sin(t * 3.5 + 1) * 1.5
     }
     if (l3.current) {
-      l3.current.position.x = 1.8 + Math.sin(t * 1.8) * 0.3
+      l3.current.position.x = 2.6 + Math.sin(t * 1.8) * 0.3
       l3.current.intensity = 3 + Math.sin(t * 2.8 + 2) * 1.5
     }
   })
 
   return (
     <>
-      <pointLight ref={l1} position={[-1.8, 2, 2]} intensity={3} distance={8} color={SHAPES[0].color} />
+      <pointLight ref={l1} position={[-2.6, 2, 2]} intensity={3} distance={8} color={SHAPES[0].color} />
       <pointLight ref={l2} position={[0, 2, 2]} intensity={3} distance={8} color={SHAPES[1].color} />
-      <pointLight ref={l3} position={[1.8, 2, 2]} intensity={3} distance={8} color={SHAPES[2].color} />
+      <pointLight ref={l3} position={[2.6, 2, 2]} intensity={3} distance={8} color={SHAPES[2].color} />
     </>
   )
 }
@@ -289,7 +289,7 @@ function Ground() {
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -2.2, 0]}>
       <planeGeometry args={[14, 8]} />
       <meshStandardMaterial
-        color="#1A2A40"
+        color="#243B60"
         roughness={0.15}
         metalness={0.8}
         transparent
@@ -305,30 +305,25 @@ export default function MenuCanvas() {
   return (
     <Canvas
       style={{ position: 'absolute', inset: 0 }}
-      camera={{ position: [0, 0.6, 7], fov: 36 }}
+      camera={{ position: [0, 0.6, 6], fov: 38 }}
       gl={{ antialias: true, alpha: true }}
     >
-      <color attach="background" args={['#0D1B2A']} />
-      <fog attach="fog" args={['#0D1B2A', 8, 16]} />
+      <color attach="background" args={['#87CEEB']} />
+      <fog attach="fog" args={['#87CEEB', 10, 20]} />
 
-      <ambientLight intensity={0.3} />
-      <directionalLight position={[2, 6, 4]} intensity={0.8} color="#C8E6F5" />
-      <hemisphereLight args={['#1A3A5C', '#0D1B2A', 0.3]} />
+      <ambientLight intensity={0.9} />
+      <directionalLight position={[3, 8, 5]} intensity={1.4} color="#FFFFFF" />
+      <hemisphereLight args={['#87CEEB', '#E8F5E9', 0.6]} />
 
       <DanceLights />
 
       <Turntable>
-        <DancingChar shapeIndex={0} posX={-1.8} />
+        <DancingChar shapeIndex={0} posX={-2.6} />
         <DancingChar shapeIndex={1} posX={0}    />
-        <DancingChar shapeIndex={2} posX={1.8}  />
+        <DancingChar shapeIndex={2} posX={2.6}  />
       </Turntable>
 
-      <SpotlightDisc posX={-1.8} color={SHAPES[0].color} />
-      <SpotlightDisc posX={0}    color={SHAPES[1].color} />
-      <SpotlightDisc posX={1.8}  color={SHAPES[2].color} />
-
       <Sparkles />
-      <Ground />
     </Canvas>
   )
 }

@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic'
 import { useRef, useState, useEffect, useCallback } from 'react'
-import { SHAPES, BASE_SPEED, LEVELS } from './GameCanvas'
+import { SHAPES, BASE_SPEED, LEVELS, getTheme } from './GameCanvas'
 import SoundManager from './SoundManager'
 
 const GameCanvas = dynamic(() => import('./GameCanvas'), { ssr: false })
@@ -101,68 +101,60 @@ function MenuButton({ children, onClick, primary, disabled }) {
   )
 }
 
-// ── Cartoonish game logo (SVG) ───────────────────────────────────────────────
+// ── Bubbly game logo ─────────────────────────────────────────────────────────
 
 function GameLogo() {
-  const W = 520
-  const H = 140
-  const textProps = {
-    x: W / 2,
-    textAnchor: 'middle',
-    fontFamily: 'Impact, Arial Black, sans-serif',
-    fontWeight: '900',
-    fontSize: 88,
-    letterSpacing: 6,
-  }
+  const letters = [
+    { ch: 'G', color: '#4FC3F7', size: 110, rot: -8,  y: -6  },
+    { ch: 'A', color: '#5BE0A8', size: 96,  rot: 5,   y: 2   },
+    { ch: 'P', color: '#81C784', size: 118, rot: -4,  y: -10 },
+    { ch: ' ', color: 'none',    size: 30,  rot: 0,   y: 0   },
+    { ch: 'R', color: '#FFB74D', size: 108, rot: 6,   y: -4  },
+    { ch: 'U', color: '#FF8A65', size: 92,  rot: -7,  y: 4   },
+    { ch: 'N', color: '#FF6B6B', size: 114, rot: 3,   y: -8  },
+    { ch: 'N', color: '#E040FB', size: 100, rot: -5,  y: 0   },
+    { ch: 'E', color: '#7C4DFF', size: 110, rot: 7,   y: -6  },
+    { ch: 'R', color: '#4FC3F7', size: 106, rot: -3,  y: 2   },
+  ]
 
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      style={{ width: '92vw', maxWidth: 520, height: '15vh', display: 'block' }}
-      preserveAspectRatio="xMidYMid meet"
-    >
-      <defs>
-        <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#4FC3F7" />
-          <stop offset="45%" stopColor="#81C784" />
-          <stop offset="100%" stopColor="#FFB74D" />
-        </linearGradient>
-        <linearGradient id="logoShine" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="rgba(255,255,255,0.7)" />
-          <stop offset="45%" stopColor="rgba(255,255,255,0.0)" />
-          <stop offset="100%" stopColor="rgba(255,255,255,0.15)" />
-        </linearGradient>
-      </defs>
-
-      {/* Drop shadow */}
-      <text {...textProps} y="98" fill="#0A1020" stroke="#0A1020" strokeWidth={12}
-        opacity={0.45} strokeLinejoin="round" paintOrder="stroke">
-        GAP RUNNER
-      </text>
-
-      {/* Dark outline with white fill — paintOrder="stroke" draws the thick
-          dark stroke BEHIND the white fill, so letter counters stay open */}
-      <text {...textProps} y="92" fill="white" stroke="#0D1B2A" strokeWidth={12}
-        strokeLinejoin="round" paintOrder="stroke">
-        GAP RUNNER
-      </text>
-
-      {/* Main gradient fill — covers the white interior, leaving only a
-          white border ring visible between gradient and dark outline */}
-      <text {...textProps} y="92" fill="url(#logoGrad)" stroke="url(#logoGrad)" strokeWidth={1}
-        strokeLinejoin="round" paintOrder="stroke">
-        GAP RUNNER
-      </text>
-
-      {/* Shine highlight */}
-      <text {...textProps} y="92" fill="url(#logoShine)" opacity={0.7}>
-        GAP RUNNER
-      </text>
-
-      {/* Specular dots */}
-      <circle cx={120} cy={52} r={4} fill="white" opacity={0.7} />
-      <circle cx={400} cy={58} r={3} fill="white" opacity={0.5} />
-    </svg>
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      gap: 0, padding: '0 8px', width: '96vw', maxWidth: 620,
+    }}>
+      {letters.map((l, i) => {
+        if (l.ch === ' ') return <div key={i} style={{ width: 16 }} />
+        return (
+          <span
+            key={i}
+            style={{
+              display: 'inline-block',
+              fontFamily: "'Arial Black', 'Impact', sans-serif",
+              fontWeight: 900,
+              fontSize: `clamp(${l.size * 0.45}px, ${l.size / 12}vw, ${l.size}px)`,
+              color: l.color,
+              textShadow: `
+                0 3px 0 rgba(0,0,0,0.15),
+                0 6px 12px rgba(0,0,0,0.1),
+                0 0 24px ${l.color}66
+              `,
+              WebkitTextStroke: '4px rgba(255,255,255,0.6)',
+              paintOrder: 'stroke fill',
+              lineHeight: 1,
+              animation: `bubbleBounce_${i} 2.2s ease-in-out infinite`,
+            }}
+          >
+            {l.ch}
+          </span>
+        )
+      })}
+      <style>{letters.map((l, i) => l.ch === ' ' ? '' : `
+        @keyframes bubbleBounce_${i} {
+          0%, 100% { transform: rotate(${l.rot}deg) translateY(${l.y}px) scale(1); }
+          50% { transform: rotate(${l.rot + (i % 2 ? 2 : -2)}deg) translateY(${l.y - 10}px) scale(1.08); }
+        }
+      `).join('')}</style>
+    </div>
   )
 }
 
@@ -269,7 +261,9 @@ export default function GapRunner() {
   const shakeRef         = useRef({ intensity: 0, duration: 0, elapsed: 999 })
   const timeScaleRef     = useRef({ value: 1.0 })
 
-  const [displayPhase,  setDisplayPhase]  = useState('MENU')
+  const displayPhaseRef = useRef('MENU')
+  const [displayPhase,  setDisplayPhase_]  = useState('MENU')
+  const setDisplayPhase = useCallback((v) => { displayPhaseRef.current = v; setDisplayPhase_(v) }, [])
   const [finalScore,    setFinalScore]    = useState(0)
   const [collisionInfo, setCollisionInfo] = useState(null)
   const [wallIds,       setWallIds]       = useState([])
@@ -289,6 +283,8 @@ export default function GapRunner() {
   const [multiplier,    setMultiplier]    = useState(1)
   const [levelStars,    setLevelStars]    = useState({})
   const [completedStars, setCompletedStars] = useState(0)
+  const [resizeTip,     setResizeTip]     = useState(false)
+  const resizeTipShownRef = useRef(false)
 
   // Load saved data
   useEffect(() => {
@@ -430,16 +426,7 @@ export default function GapRunner() {
 
   // ── Handle start (from keyboard/tap during GAME_OVER) ─────────────────────
   const handleStart = useCallback(() => {
-    const s = gameRef.current
-    if (s.gamePhase === 'MENU') {
-      // Don't auto-start from menu — buttons handle it
-      return
-    } else if (s.gamePhase === 'GAME_OVER') {
-      if (Date.now() - s.gameOverAt > 500) {
-        s.gamePhase = 'MENU'
-        setDisplayPhase('MENU')
-      }
-    }
+    // Menu and game over are handled by buttons now
   }, [])
 
   const handleGameOver = useCallback((val, colInfo) => {
@@ -482,8 +469,14 @@ export default function GapRunner() {
         }
         setStreak(event.streak)
         setMultiplier(event.multiplier || 1)
-        setFitPopup({ percent: event.fitPercent, key: Date.now() })
-        setTimeout(() => setFitPopup(null), 900)
+        setFitPopup({ percent: event.fitPercent, points: event.points, key: Date.now() })
+        setTimeout(() => setFitPopup(null), 1200)
+        // Show resize tip on early levels
+        if (gameRef.current.level <= 5 && !resizeTipShownRef.current && event.fitPercent < 60) {
+          resizeTipShownRef.current = true
+          setResizeTip(true)
+          setTimeout(() => setResizeTip(false), 4000)
+        }
         break
 
       case 'MILESTONE':
@@ -541,6 +534,7 @@ export default function GapRunner() {
         e.preventDefault()
         const phase = gameRef.current.gamePhase
         if (phase === 'PLAYING' || phase === 'PAUSED') togglePause()
+        else if (displayPhaseRef.current === 'LEVEL_SELECT') setDisplayPhase('MENU')
         return
       }
       if (e.key === 'ArrowLeft'  || e.key === 'a' || e.key === 'A') { e.preventDefault(); changeShape('prev') }
@@ -551,14 +545,12 @@ export default function GapRunner() {
         if (phase === 'PLAYING') changeShape('next')
         else if (phase === 'PAUSED') togglePause()
         else if (phase === 'LEVEL_COMPLETE') handleNextLevel()
-        else if (phase === 'GAME_OVER') handleStart()
       }
     }
 
     function onMouseDown(e) {
       const phase = gameRef.current.gamePhase
       if (phase === 'LEVEL_COMPLETE') { handleNextLevel(); return }
-      if (phase === 'GAME_OVER') { handleStart(); return }
       if (phase !== 'PLAYING') return
       isDraggingRef.current = true
       pointerNDCRef.current = toNDC(e.clientX, e.clientY)
@@ -580,7 +572,6 @@ export default function GapRunner() {
     function onTouchStart(e) {
       const phase = gameRef.current.gamePhase
       if (phase === 'LEVEL_COMPLETE') { handleNextLevel(); return }
-      if (phase === 'GAME_OVER') { handleStart(); return }
       if (phase !== 'PLAYING') return
       if (e.touches.length === 2) {
         pinch.active       = true
@@ -636,9 +627,10 @@ export default function GapRunner() {
   const nextShape = SHAPES[(shapeIndex + 1) % 3]
   const lvlDef = LEVELS[Math.min(level - 1, LEVELS.length - 1)]
   const savedLvlDef = LEVELS[Math.min(savedLevel - 1, LEVELS.length - 1)]
+  const theme = getTheme(level)
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#87CEEB', overflow: 'hidden', userSelect: 'none' }}>
+    <div style={{ position: 'fixed', inset: 0, background: theme.sky, overflow: 'hidden', userSelect: 'none', transition: 'background 1s ease' }}>
 
       {/* Canvas wrapper */}
       <div ref={canvasWrapRef} style={{ position: 'fixed', inset: 0, zIndex: 1, touchAction: 'none' }}>
@@ -718,14 +710,45 @@ export default function GapRunner() {
 
           {fitPopup && (
             <div key={fitPopup.key} style={{
-              position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 14,
-              color: fitPopup.percent >= 80 ? '#4FC3F7' : fitPopup.percent >= 60 ? '#81C784' : '#FFB74D',
-              fontFamily: 'monospace', fontSize: 'clamp(20px,4vw,34px)', fontWeight: 'bold',
-              textShadow: `0 0 12px ${fitPopup.percent >= 80 ? 'rgba(79,195,247,0.6)' : fitPopup.percent >= 60 ? 'rgba(129,199,132,0.6)' : 'rgba(255,183,77,0.6)'}`,
+              position: 'fixed', top: '48%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 14,
               pointerEvents: 'none',
-              animation: 'fitPopFloat 0.9s ease-out forwards',
+              animation: 'fitPopFloat 1.2s ease-out forwards',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
             }}>
-              {fitPopup.percent}%{fitPopup.percent >= 90 ? ' PERFECT!' : fitPopup.percent >= 80 ? ' GREAT!' : ''}
+              <div style={{
+                color: fitPopup.percent >= 80 ? '#4FC3F7' : fitPopup.percent >= 60 ? '#81C784' : '#FFB74D',
+                fontFamily: 'monospace', fontSize: 'clamp(22px,5vw,40px)', fontWeight: 'bold',
+                textShadow: `0 0 16px ${fitPopup.percent >= 80 ? 'rgba(79,195,247,0.6)' : fitPopup.percent >= 60 ? 'rgba(129,199,132,0.6)' : 'rgba(255,183,77,0.6)'}`,
+              }}>
+                {fitPopup.percent >= 90 ? 'PERFECT!' : fitPopup.percent >= 70 ? 'GREAT!' : fitPopup.percent >= 50 ? 'GOOD' : 'OK'}
+              </div>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                fontFamily: 'monospace', fontWeight: 'bold',
+              }}>
+                <div style={{
+                  width: 60, height: 6, background: 'rgba(255,255,255,0.2)', borderRadius: 3, overflow: 'hidden',
+                }}>
+                  <div style={{
+                    width: `${fitPopup.percent}%`, height: '100%', borderRadius: 3,
+                    background: fitPopup.percent >= 80 ? '#4FC3F7' : fitPopup.percent >= 60 ? '#81C784' : '#FFB74D',
+                  }} />
+                </div>
+                <span style={{
+                  color: 'rgba(255,255,255,0.7)', fontSize: 'clamp(12px,2vw,16px)',
+                  textShadow: '0 1px 4px rgba(0,0,0,0.3)',
+                }}>
+                  {fitPopup.percent}% fill
+                </span>
+              </div>
+              {fitPopup.points && (
+                <div style={{
+                  color: '#FFD700', fontFamily: 'monospace', fontSize: 'clamp(14px,2.5vw,20px)', fontWeight: 'bold',
+                  textShadow: '0 0 10px rgba(255,215,0,0.5)',
+                }}>
+                  +{fitPopup.points.toLocaleString()}
+                </div>
+              )}
             </div>
           )}
 
@@ -737,6 +760,19 @@ export default function GapRunner() {
               animation: 'nearMissFade 0.6s ease-out forwards',
             }}>
               CLOSE!
+            </div>
+          )}
+
+          {resizeTip && (
+            <div style={{
+              position: 'fixed', bottom: '14%', left: '50%', transform: 'translateX(-50%)', zIndex: 16,
+              pointerEvents: 'none', background: 'rgba(0,0,0,0.75)', borderRadius: 14, padding: '14px 24px',
+              color: 'white', fontFamily: 'monospace', fontSize: 14, textAlign: 'center',
+              border: '1px solid rgba(255,215,0,0.3)',
+              animation: 'fitPopFloat 4s ease-out forwards', lineHeight: 1.6,
+            }}>
+              Scroll / pinch to resize your shape<br/>
+              <span style={{ color: '#FFD700', fontWeight: 'bold' }}>Bigger shape = more points!</span>
             </div>
           )}
 
@@ -966,7 +1002,7 @@ export default function GapRunner() {
             position: 'fixed', inset: 0, zIndex: 20,
             display: 'flex', flexDirection: 'column',
             pointerEvents: 'auto', overflow: 'hidden',
-            background: '#0D1B2A',
+            background: 'linear-gradient(180deg, #87CEEB 0%, #B0E0F0 50%, #D4F1F9 100%)',
           }}>
             {/* 3D scene — top section */}
             <div style={{
@@ -975,8 +1011,8 @@ export default function GapRunner() {
               <MenuCanvas />
               {/* Gradient fade into content */}
               <div style={{
-                position: 'absolute', bottom: 0, left: 0, right: 0, height: 60,
-                background: 'linear-gradient(to bottom, transparent, #0F1C2E)',
+                position: 'absolute', bottom: 0, left: 0, right: 0, height: 80,
+                background: 'linear-gradient(to bottom, transparent, #B0E0F0)',
                 pointerEvents: 'none',
               }} />
             </div>
@@ -985,18 +1021,19 @@ export default function GapRunner() {
             <div style={{
               flex: 1, display: 'flex', flexDirection: 'column',
               alignItems: 'center', justifyContent: 'flex-start',
-              background: 'linear-gradient(180deg, #0F1C2E 0%, #132236 50%, #162A42 100%)',
+              background: 'linear-gradient(180deg, #B0E0F0 0%, #C8EAF5 50%, #D4F1F9 100%)',
               padding: '4px 28px 16px',
               overflow: 'auto',
             }}>
-              {/* Cartoonish game logo */}
-              <div style={{ marginBottom: -2 }}>
+              {/* Bubbly game logo */}
+              <div style={{ marginBottom: 6, marginTop: 4 }}>
                 <GameLogo />
               </div>
 
               <p style={{
-                color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace', fontSize: 9,
-                letterSpacing: 4, marginBottom: 14, textTransform: 'uppercase',
+                color: '#4A6A8A', fontFamily: 'monospace', fontSize: 11,
+                letterSpacing: 5, marginBottom: 18, textTransform: 'uppercase',
+                fontWeight: 'bold',
               }}>
                 Shape Shift · Dodge · Survive
               </p>
@@ -1009,11 +1046,12 @@ export default function GapRunner() {
                   {highScore > 0 && (
                     <div style={{
                       padding: '6px 12px', borderRadius: 16,
-                      background: 'rgba(255,140,0,0.10)', border: '1px solid rgba(255,140,0,0.2)',
+                      background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,140,0,0.3)',
                       display: 'flex', alignItems: 'center', gap: 6,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
                     }}>
                       <span style={{ fontSize: 12 }}>{'\uD83C\uDFC6'}</span>
-                      <span style={{ color: '#FFB74D', fontFamily: 'monospace', fontSize: 14, fontWeight: 'bold' }}>
+                      <span style={{ color: '#D48800', fontFamily: 'monospace', fontSize: 14, fontWeight: 'bold' }}>
                         {highScore.toLocaleString()}
                       </span>
                     </div>
@@ -1021,11 +1059,12 @@ export default function GapRunner() {
                   {savedLevel > 1 && (
                     <div style={{
                       padding: '6px 12px', borderRadius: 16,
-                      background: 'rgba(91,141,239,0.10)', border: '1px solid rgba(91,141,239,0.2)',
+                      background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(91,141,239,0.3)',
                       display: 'flex', alignItems: 'center', gap: 6,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
                     }}>
                       <span style={{ fontSize: 12 }}>{'\uD83D\uDEA9'}</span>
-                      <span style={{ color: '#5B8DEF', fontFamily: 'monospace', fontSize: 14, fontWeight: 'bold' }}>
+                      <span style={{ color: '#3A6FD8', fontFamily: 'monospace', fontSize: 14, fontWeight: 'bold' }}>
                         Lv.{savedLevel}
                       </span>
                     </div>
@@ -1033,11 +1072,12 @@ export default function GapRunner() {
                   {totalStars > 0 && (
                     <div style={{
                       padding: '6px 12px', borderRadius: 16,
-                      background: 'rgba(255,215,0,0.08)', border: '1px solid rgba(255,215,0,0.15)',
+                      background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(218,165,32,0.3)',
                       display: 'flex', alignItems: 'center', gap: 6,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
                     }}>
                       <span style={{ fontSize: 12 }}>{'\u2B50'}</span>
-                      <span style={{ color: '#FFD700', fontFamily: 'monospace', fontSize: 14, fontWeight: 'bold' }}>
+                      <span style={{ color: '#C49B00', fontFamily: 'monospace', fontSize: 14, fontWeight: 'bold' }}>
                         {totalStars}/{maxStars}
                       </span>
                     </div>
@@ -1069,23 +1109,41 @@ export default function GapRunner() {
                     onClick={() => startGame(savedLevel)}
                     style={{
                       width: '100%', padding: '13px 0', textAlign: 'center',
-                      background: 'rgba(255,255,255,0.05)',
-                      color: 'rgba(255,255,255,0.75)', fontFamily: 'monospace', fontSize: 13, fontWeight: 'bold',
+                      background: 'rgba(255,255,255,0.85)',
+                      color: '#1A3A5C', fontFamily: 'monospace', fontSize: 13, fontWeight: 'bold',
                       letterSpacing: 1, borderRadius: 12, cursor: 'pointer',
-                      border: '1px solid rgba(255,255,255,0.08)',
+                      border: '1px solid rgba(91,141,239,0.2)',
+                      boxShadow: '0 2px 10px rgba(0,0,0,0.06)',
                       transition: 'transform 0.12s, background 0.12s',
                     }}
-                    onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.02)'; e.currentTarget.style.background = 'rgba(255,255,255,0.1)' }}
-                    onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+                    onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.02)'; e.currentTarget.style.background = 'rgba(255,255,255,1)' }}
+                    onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.background = 'rgba(255,255,255,0.85)' }}
                   >
                     CONTINUE — Level {savedLevel}: {savedLvlDef.name}
                   </div>
                 )}
+
+                <div
+                  onClick={() => setDisplayPhase('LEVEL_SELECT')}
+                  style={{
+                    width: '100%', padding: '13px 0', textAlign: 'center',
+                    background: 'rgba(255,255,255,0.85)',
+                    color: '#1A3A5C', fontFamily: 'monospace', fontSize: 13, fontWeight: 'bold',
+                    letterSpacing: 1, borderRadius: 12, cursor: 'pointer',
+                    border: '1px solid rgba(91,141,239,0.2)',
+                    boxShadow: '0 2px 10px rgba(0,0,0,0.06)',
+                    transition: 'transform 0.12s, background 0.12s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.02)'; e.currentTarget.style.background = 'rgba(255,255,255,1)' }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.background = 'rgba(255,255,255,0.85)' }}
+                >
+                  SELECT LEVEL
+                </div>
               </div>
 
               {/* Controls hint — bottom */}
               <p style={{
-                color: 'rgba(255,255,255,0.18)', fontFamily: 'monospace', fontSize: 9, marginTop: 16,
+                color: 'rgba(0,0,0,0.25)', fontFamily: 'monospace', fontSize: 10, marginTop: 16,
                 letterSpacing: 0.5, textAlign: 'center', lineHeight: 1.7,
               }}>
                 Drag to move · Scroll / pinch to resize<br />
@@ -1100,6 +1158,133 @@ export default function GapRunner() {
               @keyframes milestonePop { 0% { opacity:0; transform: translate(-50%,-50%) scale(0.5) } 15% { opacity:1; transform: translate(-50%,-50%) scale(1.1) } 30% { transform: translate(-50%,-50%) scale(1) } 80% { opacity:1 } 100% { opacity:0; transform: translate(-50%,-60%) scale(0.9) } }
               @keyframes fitPopFloat { 0% { opacity:1; transform: translate(-50%,-50%) scale(1.2) } 20% { transform: translate(-50%,-50%) scale(1) } 70% { opacity:1 } 100% { opacity:0; transform: translate(-50%,-90%) scale(0.85) } }
             `}</style>
+          </div>
+        )
+      })()}
+
+      {/* ═══════════════ LEVEL SELECT ═══════════════ */}
+      {displayPhase === 'LEVEL_SELECT' && (() => {
+        const totalStars = Object.values(levelStars).reduce((a, b) => a + b, 0)
+        const maxStars = LEVELS.length * 3
+        return (
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 20,
+            display: 'flex', flexDirection: 'column',
+            background: '#0D1B2A',
+            pointerEvents: 'auto',
+          }}>
+            {/* Header */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '16px 20px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)',
+              flexShrink: 0,
+            }}>
+              <div
+                onClick={() => setDisplayPhase('MENU')}
+                style={{
+                  color: 'rgba(255,255,255,0.6)', fontFamily: 'monospace', fontSize: 14,
+                  cursor: 'pointer', padding: '6px 12px', borderRadius: 8,
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  transition: 'background 0.12s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+              >
+                BACK
+              </div>
+              <h2 style={{
+                color: 'rgba(255,255,255,0.85)', fontFamily: 'monospace', fontSize: 18,
+                fontWeight: 'bold', letterSpacing: 3, margin: 0,
+              }}>
+                SELECT LEVEL
+              </h2>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                color: '#FFD700', fontFamily: 'monospace', fontSize: 13,
+              }}>
+                {'\u2B50'} {totalStars}/{maxStars}
+              </div>
+            </div>
+
+            {/* Level grid */}
+            <div style={{
+              flex: 1, overflow: 'auto', padding: '16px 16px 24px',
+              display: 'flex', justifyContent: 'center',
+            }}>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+                gap: 10, width: '100%', maxWidth: 640,
+                alignContent: 'start',
+              }}>
+                {LEVELS.map((lvl, i) => {
+                  const lvlNum = i + 1
+                  const unlocked = lvlNum <= savedLevel
+                  const stars = levelStars[lvlNum] || 0
+                  return (
+                    <div
+                      key={lvlNum}
+                      onClick={() => { if (unlocked) startGame(lvlNum) }}
+                      style={{
+                        padding: '14px 12px 12px', borderRadius: 12,
+                        background: unlocked
+                          ? 'rgba(255,255,255,0.05)'
+                          : 'rgba(255,255,255,0.02)',
+                        border: unlocked
+                          ? '1px solid rgba(91,141,239,0.2)'
+                          : '1px solid rgba(255,255,255,0.04)',
+                        cursor: unlocked ? 'pointer' : 'default',
+                        opacity: unlocked ? 1 : 0.4,
+                        transition: 'transform 0.12s, background 0.12s, box-shadow 0.12s',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                      }}
+                      onMouseEnter={e => { if (unlocked) { e.currentTarget.style.transform = 'scale(1.04)'; e.currentTarget.style.background = 'rgba(91,141,239,0.12)'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(91,141,239,0.2)' } }}
+                      onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.background = unlocked ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)'; e.currentTarget.style.boxShadow = 'none' }}
+                    >
+                      <div style={{
+                        color: unlocked ? '#5B8DEF' : 'rgba(255,255,255,0.3)',
+                        fontFamily: 'monospace', fontSize: 22, fontWeight: 'bold',
+                      }}>
+                        {unlocked ? lvlNum : '\uD83D\uDD12'}
+                      </div>
+                      <div style={{
+                        color: unlocked ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.25)',
+                        fontFamily: 'monospace', fontSize: 11, fontWeight: 'bold',
+                        textAlign: 'center', lineHeight: 1.3,
+                      }}>
+                        {lvl.name}
+                      </div>
+                      <div style={{
+                        color: unlocked ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.15)',
+                        fontFamily: 'monospace', fontSize: 9,
+                      }}>
+                        {lvl.walls} walls · Spd {lvl.speed}
+                      </div>
+                      {unlocked && (lvl.drift || lvl.vDrift || lvl.dbl || lvl.rot || lvl.speedVar) && (
+                        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', justifyContent: 'center', marginTop: 2 }}>
+                          {lvl.drift && <span style={{ fontSize: 7, color: '#FF6B35', background: 'rgba(255,107,53,0.15)', borderRadius: 3, padding: '1px 4px' }}>DRIFT</span>}
+                          {lvl.vDrift && <span style={{ fontSize: 7, color: '#FF6BC4', background: 'rgba(255,107,196,0.15)', borderRadius: 3, padding: '1px 4px' }}>V-DRIFT</span>}
+                          {lvl.dbl && <span style={{ fontSize: 7, color: '#FFD700', background: 'rgba(255,215,0,0.15)', borderRadius: 3, padding: '1px 4px' }}>DOUBLE</span>}
+                          {lvl.speedVar && <span style={{ fontSize: 7, color: '#00FFAA', background: 'rgba(0,255,170,0.15)', borderRadius: 3, padding: '1px 4px' }}>RUSH</span>}
+                          {lvl.rot && <span style={{ fontSize: 7, color: '#4FC3F7', background: 'rgba(79,195,247,0.15)', borderRadius: 3, padding: '1px 4px' }}>SPIN</span>}
+                        </div>
+                      )}
+                      {/* Stars */}
+                      <div style={{ display: 'flex', gap: 2 }}>
+                        {[1, 2, 3].map(s => (
+                          <span key={s} style={{
+                            fontSize: 14,
+                            filter: s <= stars ? 'none' : 'grayscale(1) opacity(0.25)',
+                          }}>
+                            {'\u2B50'}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
           </div>
         )
       })()}
@@ -1123,9 +1308,14 @@ export default function GapRunner() {
               {finalScore >= highScore ? 'NEW BEST!' : `Best: ${highScore.toLocaleString()}`}
             </p>
           )}
-          <p style={{ color: '#4A6A8A', fontFamily: 'monospace', fontSize: 14, marginBottom: 0 }}>
-            TAP OR PRESS SPACE TO CONTINUE
-          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center', marginTop: 8, pointerEvents: 'auto' }}>
+            <MenuButton primary onClick={() => startGame(finalLevel)}>
+              RETRY LEVEL {finalLevel}
+            </MenuButton>
+            <MenuButton onClick={goToMenu}>
+              MAIN MENU
+            </MenuButton>
+          </div>
           <style>{`
             @keyframes streakPulse { 0% { transform: scale(1.3) } 100% { transform: scale(1) } }
             @keyframes nearMissFade { 0% { opacity:1; transform: translate(-50%,-50%) scale(1.2) } 100% { opacity:0; transform: translate(-50%,-80%) scale(0.8) } }

@@ -25,6 +25,7 @@ const TUNNEL_LEN        = TUNNEL_NEAR_Z - SPAWN_Z + 5
 const TUNNEL_CENTER_Z   = (TUNNEL_NEAR_Z + SPAWN_Z) / 2
 
 // ── 30-Level definitions ──────────────────────────────────────────────────────
+// vDrift = vertical gap oscillation, speedVar = per-wall speed variation
 
 export const LEVELS = [
   { name: 'First Steps',      walls: 3,  shapes: [0],     speed: 14, spacing: 32, gapPad: 1.50, tol: 0.20 },
@@ -38,30 +39,38 @@ export const LEVELS = [
   { name: 'Move It',          walls: 7,  shapes: [0,1,2], speed: 20, spacing: 25, gapPad: 1.30, tol: 0.14 },
   { name: 'Double Digits',    walls: 8,  shapes: [0,1,2], speed: 21, spacing: 25, gapPad: 1.28, tol: 0.14, drift: 0.4 },
   { name: 'Zoom',             walls: 8,  shapes: [0,1,2], speed: 23, spacing: 24, gapPad: 1.25, tol: 0.14, drift: 0.5 },
-  { name: 'Precision',        walls: 9,  shapes: [0,1,2], speed: 23, spacing: 24, gapPad: 1.22, tol: 0.12, drift: 0.5 },
-  { name: 'Quick Switch',     walls: 9,  shapes: [0,1,2], speed: 24, spacing: 23, gapPad: 1.22, tol: 0.12, drift: 0.6 },
-  { name: 'No Rest',          walls: 10, shapes: [0,1,2], speed: 25, spacing: 22, gapPad: 1.20, tol: 0.12, drift: 0.6, dbl: true },
-  { name: 'Halfway',          walls: 10, shapes: [0,1,2], speed: 26, spacing: 22, gapPad: 1.20, tol: 0.11, drift: 0.7, dbl: true },
-  { name: 'Size Matters',     walls: 10, shapes: [0,1,2], speed: 27, spacing: 21, gapPad: 1.18, tol: 0.11, drift: 0.7, dbl: true },
-  { name: 'Hustle',           walls: 11, shapes: [0,1,2], speed: 28, spacing: 21, gapPad: 1.18, tol: 0.10, drift: 0.8, dbl: true },
-  { name: 'Razor Thin',       walls: 11, shapes: [0,1,2], speed: 29, spacing: 20, gapPad: 1.15, tol: 0.10, drift: 0.8, dbl: true, rot: true },
-  { name: 'Gauntlet',         walls: 12, shapes: [0,1,2], speed: 30, spacing: 20, gapPad: 1.15, tol: 0.09, drift: 0.9, dbl: true, rot: true },
-  { name: 'Veteran',          walls: 12, shapes: [0,1,2], speed: 32, spacing: 19, gapPad: 1.12, tol: 0.09, drift: 0.9, dbl: true, rot: true },
-  { name: 'Blitz',            walls: 13, shapes: [0,1,2], speed: 33, spacing: 19, gapPad: 1.12, tol: 0.08, drift: 1.0, dbl: true, rot: true },
-  { name: 'Needle Thread',    walls: 13, shapes: [0,1,2], speed: 34, spacing: 18, gapPad: 1.10, tol: 0.08, drift: 1.0, dbl: true, rot: true },
-  { name: 'Overdrive',        walls: 14, shapes: [0,1,2], speed: 36, spacing: 18, gapPad: 1.10, tol: 0.07, drift: 1.1, dbl: true, rot: true },
-  { name: 'Chaos',            walls: 14, shapes: [0,1,2], speed: 38, spacing: 17, gapPad: 1.08, tol: 0.07, drift: 1.1, dbl: true, rot: true },
-  { name: 'Insanity',         walls: 15, shapes: [0,1,2], speed: 40, spacing: 17, gapPad: 1.08, tol: 0.06, drift: 1.2, dbl: true, rot: true },
-  { name: 'Pixel Perfect',    walls: 15, shapes: [0,1,2], speed: 42, spacing: 16, gapPad: 1.05, tol: 0.06, drift: 1.2, dbl: true, rot: true },
-  { name: 'Impossible?',      walls: 16, shapes: [0,1,2], speed: 44, spacing: 16, gapPad: 1.05, tol: 0.05, drift: 1.3, dbl: true, rot: true },
-  { name: 'Beyond',           walls: 16, shapes: [0,1,2], speed: 46, spacing: 15, gapPad: 1.03, tol: 0.05, drift: 1.3, dbl: true, rot: true },
-  { name: 'Final Form',       walls: 18, shapes: [0,1,2], speed: 48, spacing: 15, gapPad: 1.02, tol: 0.04, drift: 1.4, dbl: true, rot: true },
-  { name: 'GapRunner Master', walls: 20, shapes: [0,1,2], speed: 50, spacing: 14, gapPad: 1.00, tol: 0.03, drift: 1.5, dbl: true, rot: true },
+  { name: 'Precision',        walls: 9,  shapes: [0,1,2], speed: 23, spacing: 24, gapPad: 1.22, tol: 0.12, drift: 0.5, vDrift: 0.3 },
+  { name: 'Quick Switch',     walls: 9,  shapes: [0,1,2], speed: 24, spacing: 23, gapPad: 1.22, tol: 0.12, drift: 0.6, vDrift: 0.3 },
+  { name: 'No Rest',          walls: 10, shapes: [0,1,2], speed: 25, spacing: 22, gapPad: 1.20, tol: 0.12, drift: 0.6, vDrift: 0.4, dbl: true },
+  { name: 'Halfway',          walls: 10, shapes: [0,1,2], speed: 26, spacing: 22, gapPad: 1.20, tol: 0.11, drift: 0.7, vDrift: 0.4, dbl: true },
+  { name: 'Size Matters',     walls: 10, shapes: [0,1,2], speed: 27, spacing: 21, gapPad: 1.18, tol: 0.11, drift: 0.7, vDrift: 0.5, dbl: true, speedVar: 0.15 },
+  { name: 'Hustle',           walls: 11, shapes: [0,1,2], speed: 28, spacing: 21, gapPad: 1.18, tol: 0.10, drift: 0.8, vDrift: 0.5, dbl: true, speedVar: 0.15 },
+  { name: 'Razor Thin',       walls: 11, shapes: [0,1,2], speed: 29, spacing: 20, gapPad: 1.15, tol: 0.10, drift: 0.8, vDrift: 0.6, dbl: true, rot: true, speedVar: 0.2 },
+  { name: 'Gauntlet',         walls: 12, shapes: [0,1,2], speed: 30, spacing: 20, gapPad: 1.15, tol: 0.09, drift: 0.9, vDrift: 0.6, dbl: true, rot: true, speedVar: 0.2 },
+  { name: 'Veteran',          walls: 12, shapes: [0,1,2], speed: 32, spacing: 19, gapPad: 1.12, tol: 0.09, drift: 0.9, vDrift: 0.7, dbl: true, rot: true, speedVar: 0.25 },
+  { name: 'Blitz',            walls: 13, shapes: [0,1,2], speed: 33, spacing: 19, gapPad: 1.12, tol: 0.08, drift: 1.0, vDrift: 0.7, dbl: true, rot: true, speedVar: 0.25 },
+  { name: 'Needle Thread',    walls: 13, shapes: [0,1,2], speed: 34, spacing: 18, gapPad: 1.10, tol: 0.08, drift: 1.0, vDrift: 0.8, dbl: true, rot: true, speedVar: 0.3 },
+  { name: 'Overdrive',        walls: 14, shapes: [0,1,2], speed: 36, spacing: 18, gapPad: 1.10, tol: 0.07, drift: 1.1, vDrift: 0.8, dbl: true, rot: true, speedVar: 0.3 },
+  { name: 'Chaos',            walls: 14, shapes: [0,1,2], speed: 38, spacing: 17, gapPad: 1.08, tol: 0.07, drift: 1.1, vDrift: 0.9, dbl: true, rot: true, speedVar: 0.35 },
+  { name: 'Insanity',         walls: 15, shapes: [0,1,2], speed: 40, spacing: 17, gapPad: 1.08, tol: 0.06, drift: 1.2, vDrift: 0.9, dbl: true, rot: true, speedVar: 0.35 },
+  { name: 'Pixel Perfect',    walls: 15, shapes: [0,1,2], speed: 42, spacing: 16, gapPad: 1.05, tol: 0.06, drift: 1.2, vDrift: 1.0, dbl: true, rot: true, speedVar: 0.4 },
+  { name: 'Impossible?',      walls: 16, shapes: [0,1,2], speed: 44, spacing: 16, gapPad: 1.05, tol: 0.05, drift: 1.3, vDrift: 1.0, dbl: true, rot: true, speedVar: 0.4 },
+  { name: 'Beyond',           walls: 16, shapes: [0,1,2], speed: 46, spacing: 15, gapPad: 1.03, tol: 0.05, drift: 1.3, vDrift: 1.1, dbl: true, rot: true, speedVar: 0.4 },
+  { name: 'Final Form',       walls: 18, shapes: [0,1,2], speed: 48, spacing: 15, gapPad: 1.02, tol: 0.04, drift: 1.4, vDrift: 1.1, dbl: true, rot: true, speedVar: 0.4 },
+  { name: 'GapRunner Master', walls: 20, shapes: [0,1,2], speed: 50, spacing: 14, gapPad: 1.00, tol: 0.03, drift: 1.5, vDrift: 1.2, dbl: true, rot: true, speedVar: 0.5 },
 ]
 
 function getLevelDef(level) {
   const idx = Math.min(level - 1, LEVELS.length - 1)
   return LEVELS[idx]
+}
+
+// ── Environment themes ───────────────────────────────────────────────────────
+
+export function getTheme(level) {
+  if (level <= 10) return { sky: '#87CEEB', floor: '#A8E6F0', grid: '#80CCD8', rail: '#5B8DEF' }
+  if (level <= 20) return { sky: '#2C1654', floor: '#3D2066', grid: '#5B3A8C', rail: '#FF6B35' }
+  return { sky: '#080C18', floor: '#0A1628', grid: '#162840', rail: '#00FFAA' }
 }
 
 // ── Collision ─────────────────────────────────────────────────────────────────
@@ -73,12 +82,13 @@ function checkCollision(wall, playerIdx, playerX, playerY, playerScale, levelDef
   const gapPad = levelDef.gapPad
   const scale  = playerScale || 1
   const dx     = wall.driftX || 0
+  const dy     = wall.driftY || 0
   const pW = player.wFrac * CW * scale
   const pH = player.hFrac * CH * scale
   const gW = gap.wFrac * CW * gapPad
   const gH = gap.hFrac * CH * gapPad
   const gx = wall.gapOffsetX + dx
-  const gy = wall.gapOffsetY
+  const gy = wall.gapOffsetY + dy
   const fits = (
     playerX - pW / 2 >= gx - gW / 2 - tol &&
     playerX + pW / 2 <= gx + gW / 2 + tol &&
@@ -94,12 +104,13 @@ function computeMargins(wall, playerIdx, playerX, playerY, playerScale, levelDef
   const gapPad = levelDef.gapPad
   const scale  = playerScale || 1
   const dx     = wall.driftX || 0
+  const dy     = wall.driftY || 0
   const pW = player.wFrac * CW * scale
   const pH = player.hFrac * CH * scale
   const gW = gap.wFrac * CW * gapPad
   const gH = gap.hFrac * CH * gapPad
   const gx = wall.gapOffsetX + dx
-  const gy = wall.gapOffsetY
+  const gy = wall.gapOffsetY + dy
   return Math.min(
     (playerX - pW / 2) - (gx - gW / 2),
     (gx + gW / 2) - (playerX + pW / 2),
@@ -142,9 +153,25 @@ function CameraShake({ shakeRef }) {
   return null
 }
 
-// ── Open-air track (bright theme) ─────────────────────────────────────────────
+// ── Scene theme updater ──────────────────────────────────────────────────────
 
-function TrackScene() {
+function SceneTheme({ gameRef }) {
+  const { scene } = useThree()
+  const target = useRef(new THREE.Color())
+
+  useFrame(() => {
+    const theme = getTheme(gameRef.current.level)
+    target.current.set(theme.sky)
+    if (scene.background && scene.background.lerp) scene.background.lerp(target.current, 0.03)
+    if (scene.fog && scene.fog.color && scene.fog.color.lerp) scene.fog.color.lerp(target.current, 0.03)
+  })
+
+  return null
+}
+
+// ── Open-air track (themed) ──────────────────────────────────────────────────
+
+function TrackScene({ gameRef }) {
   const xLines = [-CW * 0.4, -CW * 0.2, 0, CW * 0.2, CW * 0.4]
 
   const crossZs = useMemo(() => {
@@ -153,40 +180,50 @@ function TrackScene() {
     return zs
   }, [])
 
+  const floorMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#A8E6F0', roughness: 0.55 }), [])
+  const gridMat  = useMemo(() => new THREE.MeshBasicMaterial({ color: '#80CCD8' }), [])
+  const railMat  = useMemo(() => new THREE.MeshStandardMaterial({ color: '#5B8DEF', emissive: '#5B8DEF', emissiveIntensity: 0.2 }), [])
+  const edgeGeo  = useMemo(() => new THREE.EdgesGeometry(new THREE.BoxGeometry(CW, CH, 0.01)), [])
+  const edgeRef  = useRef()
+
+  const targets = useMemo(() => ({
+    floor: new THREE.Color(), grid: new THREE.Color(), rail: new THREE.Color(),
+  }), [])
+
+  useFrame(() => {
+    const theme = getTheme(gameRef.current.level)
+    targets.floor.set(theme.floor); floorMat.color.lerp(targets.floor, 0.03)
+    targets.grid.set(theme.grid);   gridMat.color.lerp(targets.grid, 0.03)
+    targets.rail.set(theme.rail)
+    railMat.color.lerp(targets.rail, 0.03)
+    railMat.emissive.lerp(targets.rail, 0.03)
+    if (edgeRef.current) edgeRef.current.color.lerp(targets.rail, 0.03)
+  })
+
   return (
     <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -CH / 2, TUNNEL_CENTER_Z]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -CH / 2, TUNNEL_CENTER_Z]} material={floorMat}>
         <planeGeometry args={[CW, TUNNEL_LEN]} />
-        <meshStandardMaterial color="#A8E6F0" roughness={0.55} />
       </mesh>
       {xLines.map(x => (
-        <mesh key={x} rotation={[-Math.PI / 2, 0, 0]} position={[x, -CH / 2 + 0.01, TUNNEL_CENTER_Z]}>
+        <mesh key={x} rotation={[-Math.PI / 2, 0, 0]} position={[x, -CH / 2 + 0.01, TUNNEL_CENTER_Z]} material={gridMat}>
           <planeGeometry args={[0.03, TUNNEL_LEN]} />
-          <meshBasicMaterial color="#80CCD8" />
         </mesh>
       ))}
       {crossZs.map(z => (
-        <mesh key={z} rotation={[-Math.PI / 2, 0, 0]} position={[0, -CH / 2 + 0.01, z]}>
+        <mesh key={z} rotation={[-Math.PI / 2, 0, 0]} position={[0, -CH / 2 + 0.01, z]} material={gridMat}>
           <planeGeometry args={[CW, 0.03]} />
-          <meshBasicMaterial color="#80CCD8" />
         </mesh>
       ))}
-      <mesh position={[-CW / 2, -CH / 2 + 0.1, TUNNEL_CENTER_Z]}>
+      <mesh position={[-CW / 2, -CH / 2 + 0.1, TUNNEL_CENTER_Z]} material={railMat}>
         <boxGeometry args={[0.1, 0.2, TUNNEL_LEN]} />
-        <meshStandardMaterial color="#5B8DEF" emissive="#5B8DEF" emissiveIntensity={0.2} />
       </mesh>
-      <mesh position={[CW / 2, -CH / 2 + 0.1, TUNNEL_CENTER_Z]}>
+      <mesh position={[CW / 2, -CH / 2 + 0.1, TUNNEL_CENTER_Z]} material={railMat}>
         <boxGeometry args={[0.1, 0.2, TUNNEL_LEN]} />
-        <meshStandardMaterial color="#5B8DEF" emissive="#5B8DEF" emissiveIntensity={0.2} />
       </mesh>
-      {(() => {
-        const geo = new THREE.EdgesGeometry(new THREE.BoxGeometry(CW, CH, 0.01))
-        return (
-          <lineSegments geometry={geo} position={[0, 0, 0.08]}>
-            <lineBasicMaterial color="#5B8DEF" transparent opacity={0.5} />
-          </lineSegments>
-        )
-      })()}
+      <lineSegments geometry={edgeGeo} position={[0, 0, 0.08]}>
+        <lineBasicMaterial ref={edgeRef} color="#5B8DEF" transparent opacity={0.5} />
+      </lineSegments>
     </group>
   )
 }
@@ -216,6 +253,7 @@ function WallMesh({ wallId, gapShapeIndex, gapOffsetX, gapOffsetY, gapPad, gameR
     if (wall && groupRef.current) {
       groupRef.current.position.z = wall.z
       groupRef.current.position.x = wall.driftX || 0
+      groupRef.current.position.y = wall.driftY || 0
       if (wall.rotSpeed) {
         groupRef.current.rotation.z = Math.sin(state.clock.elapsedTime * wall.rotSpeed) * 0.1
       }
@@ -802,7 +840,10 @@ function GameScene({ gameRef, setWallIds, setScore, dangerRef, onGameOver, onEve
       if (w.driftAmp) {
         w.driftX = Math.sin(clock * w.driftSpeed + w.driftPhase) * w.driftAmp
       }
-      w.z += s.speed * dt
+      if (w.vDriftAmp) {
+        w.driftY = Math.sin(clock * w.vDriftSpeed + w.vDriftPhase) * w.vDriftAmp
+      }
+      w.z += s.speed * dt * (w.speedMult || 1)
     }
 
     const prevLen = s.walls.length
@@ -838,7 +879,9 @@ function GameScene({ gameRef, setWallIds, setScore, dangerRef, onGameOver, onEve
           id, z: SPAWN_Z + zOffset, gapShapeIndex: gsi,
           gapOffsetX, gapOffsetY,
           passed: false, collisionChecked: false,
-          driftX: 0, driftAmp: 0, driftSpeed: 0, driftPhase: 0, rotSpeed: 0,
+          driftX: 0, driftAmp: 0, driftSpeed: 0, driftPhase: 0,
+          driftY: 0, vDriftAmp: 0, vDriftSpeed: 0, vDriftPhase: 0,
+          rotSpeed: 0, speedMult: 1,
         }
 
         // Drifting gaps
@@ -848,9 +891,21 @@ function GameScene({ gameRef, setWallIds, setScore, dangerRef, onGameOver, onEve
           wall.driftPhase = Math.random() * Math.PI * 2
         }
 
+        // Vertical drift
+        if (lvl.vDrift) {
+          wall.vDriftAmp = lvl.vDrift * 0.4
+          wall.vDriftSpeed = 1.2 + Math.random() * 1.2
+          wall.vDriftPhase = Math.random() * Math.PI * 2
+        }
+
         // Rotating walls (visual only)
         if (lvl.rot) {
           wall.rotSpeed = 1.0 + Math.random() * 2.0
+        }
+
+        // Speed variation per wall
+        if (lvl.speedVar) {
+          wall.speedMult = 1 + (Math.random() - 0.5) * 2 * lvl.speedVar
         }
 
         s.walls.push(wall)
@@ -942,7 +997,7 @@ function GameScene({ gameRef, setWallIds, setScore, dangerRef, onGameOver, onEve
           color: SHAPES[w.gapShapeIndex].color,
         })
 
-        onEvent({ type: 'PASS', nearMiss, streak: s.streak, multiplier: mult, fitPercent: Math.round(fitRatio * 100), gapColor: SHAPES[w.gapShapeIndex].color })
+        onEvent({ type: 'PASS', nearMiss, streak: s.streak, multiplier: mult, fitPercent: Math.round(fitRatio * 100), points: basePoints * mult, gapColor: SHAPES[w.gapShapeIndex].color })
 
         // Milestone check (threshold-based)
         const milestones = [
@@ -989,12 +1044,13 @@ export default function GameCanvas({
 
       <CameraSetup />
       {shakeRef && <CameraShake shakeRef={shakeRef} />}
+      <SceneTheme gameRef={gameRef} />
 
       <ambientLight intensity={0.9} />
       <directionalLight position={[5, 12, 5]} intensity={1.3} color="#FFFFFF" />
       <hemisphereLight args={['#87CEEB', '#A8E6F0', 0.5]} />
 
-      <TrackScene />
+      <TrackScene gameRef={gameRef} />
       <PlayerMesh gameRef={gameRef} playerVisibleRef={playerVisibleRef} />
       <PlayerLight gameRef={gameRef} />
       <SpeedTrail gameRef={gameRef} />
