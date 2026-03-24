@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Gap Runner</string>
+    <string name="title_activity_main">Gap Runner</string>
+    <string name="package_name">com.gaprunner.app</string>
+    <string name="custom_url_scheme">com.gaprunner.app</string>
+</resources>

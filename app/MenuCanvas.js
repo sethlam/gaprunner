@@ -248,7 +248,7 @@ function DanceLights() {
   useFrame((state) => {
     const t = state.clock.getElapsedTime()
     if (l1.current) {
-      l1.current.position.x = -2.6 + Math.sin(t * 1.5) * 0.3
+      l1.current.position.x = -2.0 + Math.sin(t * 1.5) * 0.3
       l1.current.intensity = 3 + Math.sin(t * 3) * 1.5
     }
     if (l2.current) {
@@ -256,16 +256,16 @@ function DanceLights() {
       l2.current.intensity = 3 + Math.sin(t * 3.5 + 1) * 1.5
     }
     if (l3.current) {
-      l3.current.position.x = 2.6 + Math.sin(t * 1.8) * 0.3
+      l3.current.position.x = 2.0 + Math.sin(t * 1.8) * 0.3
       l3.current.intensity = 3 + Math.sin(t * 2.8 + 2) * 1.5
     }
   })
 
   return (
     <>
-      <pointLight ref={l1} position={[-2.6, 2, 2]} intensity={3} distance={8} color={SHAPES[0].color} />
+      <pointLight ref={l1} position={[-2.0, 2, 2]} intensity={3} distance={8} color={SHAPES[0].color} />
       <pointLight ref={l2} position={[0, 2, 2]} intensity={3} distance={8} color={SHAPES[1].color} />
-      <pointLight ref={l3} position={[2.6, 2, 2]} intensity={3} distance={8} color={SHAPES[2].color} />
+      <pointLight ref={l3} position={[2.0, 2, 2]} intensity={3} distance={8} color={SHAPES[2].color} />
     </>
   )
 }
@@ -305,7 +305,7 @@ export default function MenuCanvas() {
   return (
     <Canvas
       style={{ position: 'absolute', inset: 0 }}
-      camera={{ position: [0, 0.6, 6], fov: 38 }}
+      camera={{ position: [0, 0.5, 5], fov: 55 }}
       gl={{ antialias: true, alpha: true }}
     >
       <color attach="background" args={['#87CEEB']} />
@@ -318,9 +318,9 @@ export default function MenuCanvas() {
       <DanceLights />
 
       <Turntable>
-        <DancingChar shapeIndex={0} posX={-2.6} />
+        <DancingChar shapeIndex={0} posX={-2.0} />
         <DancingChar shapeIndex={1} posX={0}    />
-        <DancingChar shapeIndex={2} posX={2.6}  />
+        <DancingChar shapeIndex={2} posX={2.0}  />
       </Turntable>
 
       <Sparkles />

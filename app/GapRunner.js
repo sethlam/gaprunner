@@ -8,6 +8,53 @@ import SoundManager from './SoundManager'
 const GameCanvas = dynamic(() => import('./GameCanvas'), { ssr: false })
 const MenuCanvas = dynamic(() => import('./MenuCanvas'), { ssr: false })
 
+// ── AdMob helpers ─────────────────────────────────────────────────────────────
+
+const REWARDED_AD_ID = 'ca-app-pub-3486420366158936/7901903950'
+
+let admobLoaded = false
+async function initAdMob() {
+  if (admobLoaded) return
+  try {
+    const { AdMob } = await import('@capacitor-community/admob')
+    await AdMob.initialize({ initializeForTesting: false })
+    admobLoaded = true
+  } catch (_) {}
+}
+
+async function showRewardedAd() {
+  try {
+    const { AdMob, RewardAdPluginEvents } = await import('@capacitor-community/admob')
+    await initAdMob()
+    return new Promise((resolve) => {
+      let resolved = false
+      const cleanup = () => {
+        if (resolved) return
+        resolved = true
+        onRewarded.remove()
+        onFailed.remove()
+        onDismissed.remove()
+        clearTimeout(timeout)
+      }
+      const timeout = setTimeout(() => { cleanup(); resolve(false) }, 15000)
+      const onRewarded = AdMob.addListener(RewardAdPluginEvents.Rewarded, () => {
+        cleanup(); resolve(true)
+      })
+      const onDismissed = AdMob.addListener(RewardAdPluginEvents.Dismissed, () => {
+        cleanup(); resolve(false)
+      })
+      const onFailed = AdMob.addListener(RewardAdPluginEvents.FailedToLoad, () => {
+        cleanup(); resolve(false)
+      })
+      AdMob.prepareRewardVideoAd({ adId: REWARDED_AD_ID, isTesting: false })
+        .then(() => AdMob.showRewardVideoAd())
+        .catch(() => { cleanup(); resolve(false) })
+    })
+  } catch (_) {
+    return false
+  }
+}
+
 // ── Skins ─────────────────────────────────────────────────────────────────────
 
 const SKINS = [
@@ -18,35 +65,6 @@ const SKINS = [
   { name: 'Shadow',   color: '#2C2C2C', threshold: 60 },
   { name: 'Rainbow',  color: 'rainbow', threshold: 80 },
 ]
-
-// ── Daily challenge generator ─────────────────────────────────────────────────
-
-function getDailyChallenge() {
-  const today = new Date()
-  const seed = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate()
-  let s = seed
-  const r = () => { s = (s * 9301 + 49297) % 233280; return s / 233280 }
-
-  return {
-    name: `Daily ${(today.getMonth() + 1)}/${today.getDate()}`,
-    walls: 8 + Math.floor(r() * 8),
-    shapes: [0, 1, 2],
-    speed: 18 + Math.floor(r() * 20),
-    spacing: 20 + Math.floor(r() * 10),
-    gapPad: 1.05 + r() * 0.3,
-    tol: 0.08 + r() * 0.08,
-    drift: r() > 0.5 ? r() * 0.8 : 0,
-    vDrift: r() > 0.6 ? r() * 0.6 : 0,
-    dbl: r() > 0.5,
-    speedVar: r() > 0.6 ? r() * 0.3 : 0,
-    rot: r() > 0.7,
-  }
-}
-
-function getDailySeed() {
-  const today = new Date()
-  return `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`
-}
 
 // ── Default stats ─────────────────────────────────────────────────────────────
 
@@ -121,7 +139,9 @@ function MenuButton({ children, onClick, primary, disabled }) {
     <div
       onClick={disabled ? undefined : onClick}
       style={{
-        padding: primary ? '16px 48px' : '12px 36px',
+        padding: primary ? '14px 36px' : '12px 28px',
+        minHeight: 44,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
         background: disabled
           ? 'rgba(150,150,150,0.3)'
           : primary
@@ -129,7 +149,7 @@ function MenuButton({ children, onClick, primary, disabled }) {
             : 'rgba(255,255,255,0.85)',
         color: disabled ? '#999' : primary ? 'white' : '#1A3A5C',
         fontFamily: 'monospace',
-        fontSize: primary ? 18 : 15,
+        fontSize: primary ? 16 : 14,
         fontWeight: 'bold',
         letterSpacing: primary ? 3 : 1,
         borderRadius: 12,
@@ -170,7 +190,7 @@ function GameLogo() {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      gap: 0, padding: '0 8px', width: '96vw', maxWidth: 620,
+      gap: 0, padding: '0 4px', width: '96vw', maxWidth: 620,
     }}>
       {letters.map((l, i) => {
         if (l.ch === ' ') return <div key={i} style={{ width: 16 }} />
@@ -181,14 +201,14 @@ function GameLogo() {
               display: 'inline-block',
               fontFamily: "'Arial Black', 'Impact', sans-serif",
               fontWeight: 900,
-              fontSize: `clamp(${l.size * 0.45}px, ${l.size / 12}vw, ${l.size}px)`,
+              fontSize: `clamp(${l.size * 0.5}px, ${l.size / 9}vw, ${l.size}px)`,
               color: l.color,
               textShadow: `
                 0 3px 0 rgba(0,0,0,0.15),
                 0 6px 12px rgba(0,0,0,0.1),
                 0 0 24px ${l.color}66
               `,
-              WebkitTextStroke: '4px rgba(255,255,255,0.6)',
+              WebkitTextStroke: '2px rgba(255,255,255,0.6)',
               paintOrder: 'stroke fill',
               lineHeight: 1,
               animation: `bubbleBounce_${i} 2.2s ease-in-out infinite`,
@@ -213,7 +233,7 @@ function GameLogo() {
 function CollisionDiagram({ info }) {
   if (!info) return null
 
-  const SIZE = 220
+  const SIZE = 180
   const PAD  = 12
 
   const diagScale = (SIZE - PAD * 2) / Math.max(info.wallW, info.wallH)
@@ -272,25 +292,26 @@ function CollisionDiagram({ info }) {
 // ── Shape indicator panel ────────────────────────────────────────────────────
 
 function ShapePanel({ shape, side, label, onClick }) {
-  const PREVIEW = 68
+  const PREVIEW = 48
   return (
     <div
       onClick={onClick}
       style={{
-        position: 'fixed', [side]: '3%', top: '60%', transform: 'translateY(-50%)',
-        zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
-        background: 'rgba(255,255,255,0.85)', border: `1px solid ${shape.color}66`,
-        boxShadow: '0 2px 12px rgba(0,0,0,0.12)', borderRadius: 10, padding: '14px 16px', cursor: 'pointer',
+        position: 'fixed', [side]: '2%', top: '55%', transform: 'translateY(-50%)',
+        zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+        background: 'rgba(255,255,255,0.8)', border: `1px solid ${shape.color}66`,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.1)', borderRadius: 8, padding: '10px 10px', cursor: 'pointer',
+        minWidth: 44, minHeight: 44,
       }}
     >
       <div style={{ width: PREVIEW, height: PREVIEW, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{
           width: shape.wFrac * PREVIEW, height: shape.hFrac * PREVIEW,
           background: shape.color, borderRadius: 3, border: `1.5px solid ${shape.color}`,
-          boxShadow: `0 0 10px ${shape.color}88`, opacity: 0.82,
+          boxShadow: `0 0 8px ${shape.color}88`, opacity: 0.82,
         }} />
       </div>
-      <span style={{ color: 'rgba(0,0,0,0.45)', fontFamily: 'monospace', fontSize: 11 }}>{label}</span>
+      <span style={{ color: 'rgba(0,0,0,0.45)', fontFamily: 'monospace', fontSize: 9 }}>{label}</span>
     </div>
   )
 }
@@ -339,11 +360,9 @@ export default function GapRunner() {
   const [resizeTip,     setResizeTip]     = useState(false)
   const resizeTipShownRef = useRef(false)
   const [showingAd,     setShowingAd]     = useState(false)
-  const [adCountdown,   setAdCountdown]   = useState(0)
   const [canContinue,   setCanContinue]   = useState(false)
   const [selectedSkin,  setSelectedSkin]  = useState(0)
   const [stats,         setStats]         = useState(DEFAULT_STATS)
-  const [dailyBest,     setDailyBest]     = useState(0)
   const [comboBreakText, setComboBreakText] = useState('')
 
   // Load saved data
@@ -359,8 +378,6 @@ export default function GapRunner() {
       if (savedStats) setStats(prev => ({ ...prev, ...JSON.parse(savedStats) }))
       const savedSkin = localStorage.getItem('gaprunner_skin')
       if (savedSkin) setSelectedSkin(parseInt(savedSkin, 10) || 0)
-      const dBest = localStorage.getItem('gaprunner_daily_' + getDailySeed())
-      if (dBest) setDailyBest(parseInt(dBest, 10) || 0)
     } catch (_) {}
   }, [])
 
@@ -538,49 +555,28 @@ export default function GapRunner() {
     soundRef.current.startMusic(100 + lvlDef.speed * 1.5)
   }, [])
 
-  const startAdThenContinue = useCallback(() => {
+  const [adCountdown, setAdCountdown] = useState(0)
+
+  const startAdThenContinue = useCallback(async () => {
     setShowingAd(true)
-    setAdCountdown(3)
-    let count = 3
-    const timer = setInterval(() => {
-      count--
-      setAdCountdown(count)
-      if (count <= 0) {
-        clearInterval(timer)
-        setShowingAd(false)
-        continueFromDeath()
-      }
-    }, 1000)
+    const rewarded = await showRewardedAd()
+    if (rewarded) {
+      setAdCountdown(3)
+      let count = 3
+      const timer = setInterval(() => {
+        count--
+        setAdCountdown(count)
+        if (count <= 0) {
+          clearInterval(timer)
+          setShowingAd(false)
+          setAdCountdown(0)
+          continueFromDeath()
+        }
+      }, 1000)
+    } else {
+      setShowingAd(false)
+    }
   }, [continueFromDeath])
-
-  // ── Daily challenge ──────────────────────────────────────────────────────
-  const startDailyChallenge = useCallback(() => {
-    const daily = getDailyChallenge()
-    const fresh = initGame(1)
-    fresh.gamePhase = 'PLAYING'
-    fresh.customLevel = daily
-    fresh.skinColor = SKINS[selectedSkin] ? SKINS[selectedSkin].color : null
-    gameRef.current = fresh
-    playerVisibleRef.current = true
-    particleBurstsRef.current = []
-    deathRef.current = null
-    usedContinueRef.current = false
-    deathSnapshotRef.current = null
-    setCanContinue(false)
-    setWallIds([])
-    setShapeIndex(0)
-    setScore(0)
-    setStreak(0)
-    setLevel(1)
-    setLevelName(daily.name)
-    setMilestoneText('')
-    setLevelUpText('')
-    setDisplayPhase('PLAYING')
-
-    if (!soundRef.current) soundRef.current = new SoundManager()
-    soundRef.current.resume()
-    soundRef.current.startMusic(100 + daily.speed * 1.5)
-  }, [selectedSkin])
 
   // ── Skin selection ───────────────────────────────────────────────────────
   const selectSkin = useCallback((idx) => {
@@ -662,18 +658,6 @@ export default function GapRunner() {
       bestStreak: s.streak,
       timePlayed: elapsed,
     })
-
-    // Daily challenge best
-    if (s.customLevel) {
-      try {
-        const key = 'gaprunner_daily_' + getDailySeed()
-        const prev = parseInt(localStorage.getItem(key) || '0', 10)
-        if (val > prev) {
-          localStorage.setItem(key, String(val))
-          setDailyBest(val)
-        }
-      } catch (_) {}
-    }
 
     if (soundRef.current) {
       soundRef.current.playDeath()
@@ -904,16 +888,17 @@ export default function GapRunner() {
       {displayPhase === 'PLAYING' && (
         <>
           <div style={{
-            position: 'fixed', top: 16, left: 20, zIndex: 10,
+            position: 'fixed', top: 12, left: 12, zIndex: 10,
             color: '#1A3A5C', fontFamily: 'monospace', fontWeight: 'bold',
             textShadow: '0 1px 3px rgba(255,255,255,0.6)', pointerEvents: 'none',
+            maxWidth: '35vw',
           }}>
-            <div style={{ fontSize: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
-              Score: {score.toLocaleString()}
+            <div style={{ fontSize: 'clamp(14px, 4vw, 20px)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              {score.toLocaleString()}
               {multiplier > 1 && (
                 <span style={{
-                  fontSize: 14, color: multiplier >= 4 ? '#FF1744' : multiplier >= 3 ? '#FF9100' : '#FFD600',
-                  background: 'rgba(0,0,0,0.1)', borderRadius: 6, padding: '2px 8px',
+                  fontSize: 'clamp(11px, 2.5vw, 14px)', color: multiplier >= 4 ? '#FF1744' : multiplier >= 3 ? '#FF9100' : '#FFD600',
+                  background: 'rgba(0,0,0,0.1)', borderRadius: 6, padding: '2px 6px',
                   animation: 'streakPulse 0.3s ease-out',
                   fontWeight: 'bold',
                 }}>
@@ -921,17 +906,17 @@ export default function GapRunner() {
                 </span>
               )}
             </div>
-            {speedTier && <div style={{ fontSize: 13, color: '#D32F2F', marginTop: 2 }}>{speedTier}</div>}
+            {speedTier && <div style={{ fontSize: 11, color: '#D32F2F', marginTop: 2 }}>{speedTier}</div>}
           </div>
 
           <div style={{
-            position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 10,
+            position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 10,
             color: '#1A3A5C', fontFamily: 'monospace', fontWeight: 'bold', textAlign: 'center',
             textShadow: '0 1px 3px rgba(255,255,255,0.6)', pointerEvents: 'none',
           }}>
-            <div style={{ fontSize: 14 }}>LEVEL {level}</div>
-            <div style={{ fontSize: 11, color: '#4A6A8A', marginTop: 2 }}>{levelName}</div>
-            <div style={{ marginTop: 4, width: 100, height: 4, background: 'rgba(0,0,0,0.1)', borderRadius: 2 }}>
+            <div style={{ fontSize: 12 }}>LV.{level}</div>
+            <div style={{ fontSize: 10, color: '#4A6A8A', marginTop: 1 }}>{levelName}</div>
+            <div style={{ marginTop: 3, width: 80, height: 3, background: 'rgba(0,0,0,0.1)', borderRadius: 2 }}>
               <div style={{
                 width: `${Math.min(100, (gameRef.current.wallsCleared / lvlDef.walls) * 100)}%`,
                 height: '100%', background: '#5B8DEF', borderRadius: 2, transition: 'width 0.3s',
@@ -941,8 +926,8 @@ export default function GapRunner() {
 
           {streak >= 3 && (
             <div style={{
-              position: 'fixed', top: 70, left: 20, zIndex: 10,
-              color: '#FF8C00', fontFamily: 'monospace', fontSize: Math.min(16 + streak, 28), fontWeight: 'bold',
+              position: 'fixed', top: 58, left: 12, zIndex: 10,
+              color: '#FF8C00', fontFamily: 'monospace', fontSize: Math.min(14 + streak, 24), fontWeight: 'bold',
               textShadow: '0 0 10px rgba(255,140,0,0.5)', pointerEvents: 'none',
               animation: 'streakPulse 0.5s ease-in-out',
             }}>
@@ -1018,8 +1003,8 @@ export default function GapRunner() {
 
           {resizeTip && (
             <div style={{
-              position: 'fixed', bottom: '14%', left: '50%', transform: 'translateX(-50%)', zIndex: 16,
-              pointerEvents: 'none', background: 'rgba(0,0,0,0.75)', borderRadius: 14, padding: '14px 24px',
+              position: 'fixed', top: '12%', left: '50%', transform: 'translateX(-50%)', zIndex: 16,
+              pointerEvents: 'none', background: 'rgba(0,0,0,0.35)', borderRadius: 14, padding: '14px 24px',
               color: 'white', fontFamily: 'monospace', fontSize: 14, textAlign: 'center',
               border: '1px solid rgba(255,215,0,0.3)',
               animation: 'fitPopFloat 4s ease-out forwards', lineHeight: 1.6,
@@ -1055,8 +1040,8 @@ export default function GapRunner() {
           <div
             onClick={togglePause}
             style={{
-              position: 'fixed', top: 16, right: 64, zIndex: 25,
-              width: 36, height: 36, borderRadius: 18,
+              position: 'fixed', top: 12, right: 56, zIndex: 25,
+              width: 44, height: 44, borderRadius: 22,
               background: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer', fontSize: 16, pointerEvents: 'auto',
               border: '1px solid rgba(0,0,0,0.1)', fontFamily: 'monospace', fontWeight: 'bold',
@@ -1113,8 +1098,8 @@ export default function GapRunner() {
       <div
         onClick={toggleMute}
         style={{
-          position: 'fixed', top: 16, right: 20, zIndex: 25,
-          width: 36, height: 36, borderRadius: 18,
+          position: 'fixed', top: 12, right: 8, zIndex: 25,
+          width: 44, height: 44, borderRadius: 22,
           background: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center',
           cursor: 'pointer', fontSize: 18, pointerEvents: 'auto',
           border: '1px solid rgba(0,0,0,0.1)',
@@ -1142,7 +1127,7 @@ export default function GapRunner() {
             }}>
               {[1, 2, 3].map(i => (
                 <span key={i} style={{
-                  fontSize: 42,
+                  fontSize: 36,
                   filter: i <= completedStars ? 'none' : 'grayscale(1) opacity(0.3)',
                   animationDelay: `${i * 0.2}s`,
                   animation: i <= completedStars ? `starPop 0.4s ease-out ${i * 0.2}s both` : 'none',
@@ -1168,12 +1153,12 @@ export default function GapRunner() {
             </p>
 
             <div style={{
-              display: 'flex', gap: 24, marginBottom: 28, padding: '14px 28px',
+              display: 'flex', gap: 20, marginBottom: 20, padding: '12px 24px',
               background: 'rgba(255,255,255,0.6)', borderRadius: 12,
               border: '1px solid rgba(91,141,239,0.15)',
             }}>
               <div style={{ textAlign: 'center' }}>
-                <div style={{ color: '#1A3A5C', fontFamily: 'monospace', fontSize: 24, fontWeight: 'bold' }}>
+                <div style={{ color: '#1A3A5C', fontFamily: 'monospace', fontSize: 20, fontWeight: 'bold' }}>
                   {score.toLocaleString()}
                 </div>
                 <div style={{ color: '#8A9AB0', fontFamily: 'monospace', fontSize: 9, letterSpacing: 1 }}>
@@ -1181,7 +1166,7 @@ export default function GapRunner() {
                 </div>
               </div>
               <div style={{ textAlign: 'center' }}>
-                <div style={{ color: '#FF8C00', fontFamily: 'monospace', fontSize: 24, fontWeight: 'bold' }}>
+                <div style={{ color: '#FF8C00', fontFamily: 'monospace', fontSize: 20, fontWeight: 'bold' }}>
                   {streak}
                 </div>
                 <div style={{ color: '#8A9AB0', fontFamily: 'monospace', fontSize: 9, letterSpacing: 1 }}>
@@ -1192,7 +1177,7 @@ export default function GapRunner() {
 
             {/* Next level preview */}
             <div style={{
-              marginBottom: 24, padding: '12px 24px',
+              marginBottom: 20, padding: '10px 20px',
               background: 'rgba(91,141,239,0.08)', borderRadius: 10,
               border: '1px solid rgba(91,141,239,0.12)', textAlign: 'center',
             }}>
@@ -1259,7 +1244,7 @@ export default function GapRunner() {
           }}>
             {/* 3D scene — top section */}
             <div style={{
-              position: 'relative', width: '100%', flex: '0 0 40%', minHeight: 200,
+              position: 'relative', width: '100%', flex: '0 0 28%', minHeight: 160,
             }}>
               <MenuCanvas />
               {/* Gradient fade into content */}
@@ -1270,22 +1255,22 @@ export default function GapRunner() {
               }} />
             </div>
 
-            {/* Content — bottom section, anchored to top */}
+            {/* Content — bottom section, vertically centered */}
             <div style={{
               flex: 1, display: 'flex', flexDirection: 'column',
-              alignItems: 'center', justifyContent: 'flex-start',
+              alignItems: 'center', justifyContent: 'center',
               background: 'linear-gradient(180deg, #B0E0F0 0%, #C8EAF5 50%, #D4F1F9 100%)',
-              padding: '4px 28px 16px',
+              padding: '8px 16px 24px',
               overflow: 'auto',
             }}>
               {/* Bubbly game logo */}
-              <div style={{ marginBottom: 6, marginTop: 4 }}>
+              <div style={{ marginBottom: 8, overflow: 'visible' }}>
                 <GameLogo />
               </div>
 
               <p style={{
-                color: '#4A6A8A', fontFamily: 'monospace', fontSize: 11,
-                letterSpacing: 5, marginBottom: 18, textTransform: 'uppercase',
+                color: '#4A6A8A', fontFamily: 'monospace', fontSize: 10,
+                letterSpacing: 3, marginBottom: 14, textTransform: 'uppercase',
                 fontWeight: 'bold',
               }}>
                 Shape Shift · Dodge · Survive
@@ -1294,43 +1279,43 @@ export default function GapRunner() {
               {/* Stats row — compact horizontal chips */}
               {(highScore > 0 || savedLevel > 1 || totalStars > 0) && (
                 <div style={{
-                  display: 'flex', gap: 8, marginBottom: 16, justifyContent: 'center',
+                  display: 'flex', gap: 6, marginBottom: 16, justifyContent: 'center',
                 }}>
                   {highScore > 0 && (
                     <div style={{
-                      padding: '6px 12px', borderRadius: 16,
+                      padding: '4px 10px', borderRadius: 14,
                       background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,140,0,0.3)',
-                      display: 'flex', alignItems: 'center', gap: 6,
+                      display: 'flex', alignItems: 'center', gap: 4,
                       boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
                     }}>
-                      <span style={{ fontSize: 12 }}>{'\uD83C\uDFC6'}</span>
-                      <span style={{ color: '#D48800', fontFamily: 'monospace', fontSize: 14, fontWeight: 'bold' }}>
+                      <span style={{ fontSize: 10 }}>{'\uD83C\uDFC6'}</span>
+                      <span style={{ color: '#D48800', fontFamily: 'monospace', fontSize: 12, fontWeight: 'bold' }}>
                         {highScore.toLocaleString()}
                       </span>
                     </div>
                   )}
                   {savedLevel > 1 && (
                     <div style={{
-                      padding: '6px 12px', borderRadius: 16,
+                      padding: '4px 10px', borderRadius: 14,
                       background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(91,141,239,0.3)',
-                      display: 'flex', alignItems: 'center', gap: 6,
+                      display: 'flex', alignItems: 'center', gap: 4,
                       boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
                     }}>
-                      <span style={{ fontSize: 12 }}>{'\uD83D\uDEA9'}</span>
-                      <span style={{ color: '#3A6FD8', fontFamily: 'monospace', fontSize: 14, fontWeight: 'bold' }}>
+                      <span style={{ fontSize: 10 }}>{'\uD83D\uDEA9'}</span>
+                      <span style={{ color: '#3A6FD8', fontFamily: 'monospace', fontSize: 12, fontWeight: 'bold' }}>
                         Lv.{savedLevel}
                       </span>
                     </div>
                   )}
                   {totalStars > 0 && (
                     <div style={{
-                      padding: '6px 12px', borderRadius: 16,
+                      padding: '4px 10px', borderRadius: 14,
                       background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(218,165,32,0.3)',
-                      display: 'flex', alignItems: 'center', gap: 6,
+                      display: 'flex', alignItems: 'center', gap: 4,
                       boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
                     }}>
-                      <span style={{ fontSize: 12 }}>{'\u2B50'}</span>
-                      <span style={{ color: '#C49B00', fontFamily: 'monospace', fontSize: 14, fontWeight: 'bold' }}>
+                      <span style={{ fontSize: 10 }}>{'\u2B50'}</span>
+                      <span style={{ color: '#C49B00', fontFamily: 'monospace', fontSize: 12, fontWeight: 'bold' }}>
                         {totalStars}/{maxStars}
                       </span>
                     </div>
@@ -1338,14 +1323,15 @@ export default function GapRunner() {
                 </div>
               )}
 
-              {/* Buttons — full width with safe padding */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', width: '100%', maxWidth: 320 }}>
+              {/* Buttons — consistent width */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'stretch', width: '100%', maxWidth: 300 }}>
                 <div
                   onClick={() => startGame(1)}
                   style={{
-                    width: '100%', padding: '15px 0', textAlign: 'center',
+                    padding: '14px 0', textAlign: 'center',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
                     background: 'linear-gradient(135deg, #4FC3F7 0%, #5B8DEF 100%)',
-                    color: 'white', fontFamily: 'monospace', fontSize: 16, fontWeight: 'bold',
+                    color: 'white', fontFamily: 'monospace', fontSize: 18, fontWeight: 'bold',
                     letterSpacing: 3, borderRadius: 14, cursor: 'pointer',
                     border: '1px solid rgba(255,255,255,0.15)',
                     boxShadow: '0 4px 24px rgba(79,195,247,0.3), inset 0 1px 0 rgba(255,255,255,0.15)',
@@ -1361,9 +1347,10 @@ export default function GapRunner() {
                   <div
                     onClick={() => startGame(savedLevel)}
                     style={{
-                      width: '100%', padding: '13px 0', textAlign: 'center',
+                      padding: '12px 0', textAlign: 'center',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
                       background: 'rgba(255,255,255,0.85)',
-                      color: '#1A3A5C', fontFamily: 'monospace', fontSize: 13, fontWeight: 'bold',
+                      color: '#1A3A5C', fontFamily: 'monospace', fontSize: 16, fontWeight: 'bold',
                       letterSpacing: 1, borderRadius: 12, cursor: 'pointer',
                       border: '1px solid rgba(91,141,239,0.2)',
                       boxShadow: '0 2px 10px rgba(0,0,0,0.06)',
@@ -1372,16 +1359,17 @@ export default function GapRunner() {
                     onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.02)'; e.currentTarget.style.background = 'rgba(255,255,255,1)' }}
                     onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.background = 'rgba(255,255,255,0.85)' }}
                   >
-                    CONTINUE — Level {savedLevel}: {savedLvlDef.name}
+                    CONTINUE — Lv.{savedLevel}
                   </div>
                 )}
 
                 <div
                   onClick={() => setDisplayPhase('LEVEL_SELECT')}
                   style={{
-                    width: '100%', padding: '13px 0', textAlign: 'center',
+                    padding: '12px 0', textAlign: 'center',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
                     background: 'rgba(255,255,255,0.85)',
-                    color: '#1A3A5C', fontFamily: 'monospace', fontSize: 13, fontWeight: 'bold',
+                    color: '#1A3A5C', fontFamily: 'monospace', fontSize: 16, fontWeight: 'bold',
                     letterSpacing: 1, borderRadius: 12, cursor: 'pointer',
                     border: '1px solid rgba(91,141,239,0.2)',
                     boxShadow: '0 2px 10px rgba(0,0,0,0.06)',
@@ -1390,24 +1378,7 @@ export default function GapRunner() {
                   onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.02)'; e.currentTarget.style.background = 'rgba(255,255,255,1)' }}
                   onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.background = 'rgba(255,255,255,0.85)' }}
                 >
-                  SELECT LEVEL
-                </div>
-
-                <div
-                  onClick={startDailyChallenge}
-                  style={{
-                    width: '100%', padding: '13px 0', textAlign: 'center',
-                    background: 'linear-gradient(135deg, #FF8C00 0%, #FFB74D 100%)',
-                    color: 'white', fontFamily: 'monospace', fontSize: 13, fontWeight: 'bold',
-                    letterSpacing: 1, borderRadius: 12, cursor: 'pointer',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    boxShadow: '0 2px 12px rgba(255,140,0,0.3)',
-                    transition: 'transform 0.12s',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.02)' }}
-                  onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
-                >
-                  DAILY CHALLENGE {dailyBest > 0 ? `(Best: ${dailyBest.toLocaleString()})` : ''}
+                  LEVELS
                 </div>
               </div>
 
@@ -1415,7 +1386,7 @@ export default function GapRunner() {
               {(() => {
                 const unlockedStars = Object.values(levelStars).reduce((a, b) => a + b, 0)
                 return (
-                  <div style={{ marginTop: 14, width: '100%', maxWidth: 320 }}>
+                  <div style={{ marginTop: 18, width: '100%', maxWidth: 300 }}>
                     <div style={{ color: 'rgba(0,0,0,0.35)', fontFamily: 'monospace', fontSize: 10, letterSpacing: 2, marginBottom: 6, textAlign: 'center' }}>
                       SKINS
                     </div>
@@ -1451,13 +1422,13 @@ export default function GapRunner() {
               })()}
 
               {/* Stats row */}
-              <div style={{ display: 'flex', gap: 12, marginTop: 14, justifyContent: 'center' }}>
+              <div style={{ display: 'flex', gap: 12, marginTop: 18, justifyContent: 'center' }}>
                 <div
                   onClick={() => setDisplayPhase('STATS')}
                   style={{
-                    padding: '8px 16px', borderRadius: 10,
+                    padding: '12px 28px', borderRadius: 12,
                     background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(0,0,0,0.08)',
-                    color: '#4A6A8A', fontFamily: 'monospace', fontSize: 11, fontWeight: 'bold',
+                    color: '#4A6A8A', fontFamily: 'monospace', fontSize: 14, fontWeight: 'bold',
                     cursor: 'pointer', letterSpacing: 1,
                     transition: 'transform 0.12s',
                   }}
@@ -1470,7 +1441,7 @@ export default function GapRunner() {
 
               {/* Controls hint — bottom */}
               <p style={{
-                color: 'rgba(0,0,0,0.25)', fontFamily: 'monospace', fontSize: 10, marginTop: 12,
+                color: 'rgba(0,0,0,0.25)', fontFamily: 'monospace', fontSize: 10, marginTop: 18,
                 letterSpacing: 0.5, textAlign: 'center', lineHeight: 1.7,
               }}>
                 Drag to move · Scroll / pinch to resize<br />
@@ -1621,21 +1592,21 @@ export default function GapRunner() {
         <div style={{ ...overlayStyle, animation: 'fadeInOverlay 0.3s ease-out' }}>
           <CollisionDiagram info={collisionInfo} />
 
-          <h1 style={{ color: '#D32F2F', fontSize: 'clamp(28px,6vw,52px)', fontFamily: 'monospace', letterSpacing: 4, marginBottom: 16, textShadow: '0 2px 8px rgba(255,255,255,0.4)' }}>
+          <h1 style={{ color: '#D32F2F', fontSize: 'clamp(24px,5vw,42px)', fontFamily: 'monospace', letterSpacing: 4, marginBottom: 12, textShadow: '0 2px 8px rgba(255,255,255,0.4)' }}>
             GAME OVER
           </h1>
-          <p style={{ color: '#1A3A5C', fontFamily: 'monospace', fontSize: 28, marginBottom: 8, fontWeight: 'bold' }}>
+          <p style={{ color: '#1A3A5C', fontFamily: 'monospace', fontSize: 'clamp(20px,5vw,28px)', marginBottom: 6, fontWeight: 'bold' }}>
             Score: {finalScore.toLocaleString()}
           </p>
-          <p style={{ color: '#4A6A8A', fontFamily: 'monospace', fontSize: 14, marginBottom: 8 }}>
+          <p style={{ color: '#4A6A8A', fontFamily: 'monospace', fontSize: 13, marginBottom: 6 }}>
             Level {finalLevel} — {LEVELS[Math.min(finalLevel - 1, LEVELS.length - 1)].name}
           </p>
           {highScore > 0 && (
-            <p style={{ color: '#FF8C00', fontFamily: 'monospace', fontSize: 16, fontWeight: 'bold', marginBottom: 20 }}>
+            <p style={{ color: '#FF8C00', fontFamily: 'monospace', fontSize: 14, fontWeight: 'bold', marginBottom: 16 }}>
               {finalScore >= highScore ? 'NEW BEST!' : `Best: ${highScore.toLocaleString()}`}
             </p>
           )}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center', marginTop: 8, pointerEvents: 'auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', marginTop: 4, pointerEvents: 'auto', width: '80%', maxWidth: 280 }}>
             {canContinue && (
               <MenuButton primary onClick={startAdThenContinue}>
                 {'\u25B6'} CONTINUE (WATCH AD)
@@ -1708,26 +1679,39 @@ export default function GapRunner() {
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
           background: 'rgba(0,0,0,0.92)',
         }}>
-          <div style={{
-            background: '#1a1a2e', borderRadius: 16, padding: '40px 48px',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
-            border: '2px solid #333',
-          }}>
-            <p style={{ color: '#aaa', fontFamily: 'monospace', fontSize: 14, letterSpacing: 2 }}>
-              AD PLACEHOLDER
-            </p>
-            <div style={{
-              width: 80, height: 80, borderRadius: '50%',
-              border: '4px solid #4FC3F7', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <span style={{ color: '#4FC3F7', fontFamily: 'monospace', fontSize: 36, fontWeight: 'bold' }}>
-                {adCountdown}
-              </span>
-            </div>
-            <p style={{ color: '#666', fontFamily: 'monospace', fontSize: 12 }}>
-              Resuming in {adCountdown}s...
-            </p>
-          </div>
+          {adCountdown > 0 ? (
+            <>
+              <div style={{
+                width: 80, height: 80, borderRadius: '50%',
+                border: '4px solid #4FC3F7', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                marginBottom: 16,
+              }}>
+                <span style={{ color: '#4FC3F7', fontFamily: 'monospace', fontSize: 36, fontWeight: 'bold' }}>
+                  {adCountdown}
+                </span>
+              </div>
+              <p style={{ color: '#aaa', fontFamily: 'monospace', fontSize: 14, letterSpacing: 2 }}>
+                Get ready...
+              </p>
+            </>
+          ) : (
+            <>
+              <p style={{ color: '#aaa', fontFamily: 'monospace', fontSize: 14, letterSpacing: 2, marginBottom: 24 }}>
+                Loading ad...
+              </p>
+              <div
+                onClick={() => setShowingAd(false)}
+                style={{
+                  padding: '10px 24px', borderRadius: 10, cursor: 'pointer',
+                  background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.2)',
+                  color: '#888', fontFamily: 'monospace', fontSize: 12, letterSpacing: 1,
+                  pointerEvents: 'auto',
+                }}
+              >
+                CANCEL
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
