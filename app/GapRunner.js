@@ -11,6 +11,7 @@ const MenuCanvas = dynamic(() => import('./MenuCanvas'), { ssr: false })
 // ── AdMob helpers ─────────────────────────────────────────────────────────────
 
 const REWARDED_AD_ID = 'ca-app-pub-3486420366158936/7901903950'
+const INTERSTITIAL_AD_ID = 'ca-app-pub-3486420366158936/5448266474'
 
 let admobLoaded = false
 async function initAdMob() {
@@ -36,7 +37,7 @@ async function showRewardedAd() {
         onDismissed.remove()
         clearTimeout(timeout)
       }
-      const timeout = setTimeout(() => { cleanup(); resolve(false) }, 15000)
+      const timeout = setTimeout(() => { cleanup(); resolve(false) }, 3000)
       const onRewarded = AdMob.addListener(RewardAdPluginEvents.Rewarded, () => {
         cleanup(); resolve(true)
       })
@@ -53,6 +54,33 @@ async function showRewardedAd() {
   } catch (_) {
     return false
   }
+}
+
+async function showInterstitialAd() {
+  try {
+    const { AdMob, AdMobInterstitialAdPluginEvents } = await import('@capacitor-community/admob')
+    await initAdMob()
+    return new Promise((resolve) => {
+      let resolved = false
+      const cleanup = () => {
+        if (resolved) return
+        resolved = true
+        onDismissed.remove()
+        onFailed.remove()
+        clearTimeout(timeout)
+      }
+      const timeout = setTimeout(() => { cleanup(); resolve() }, 3000)
+      const onDismissed = AdMob.addListener(AdMobInterstitialAdPluginEvents.Dismissed, () => {
+        cleanup(); resolve()
+      })
+      const onFailed = AdMob.addListener(AdMobInterstitialAdPluginEvents.FailedToLoad, () => {
+        cleanup(); resolve()
+      })
+      AdMob.prepareInterstitial({ adId: INTERSTITIAL_AD_ID })
+        .then(() => AdMob.showInterstitial())
+        .catch(() => { cleanup(); resolve() })
+    })
+  } catch (_) {}
 }
 
 // ── Skins ─────────────────────────────────────────────────────────────────────
@@ -475,9 +503,12 @@ export default function GapRunner() {
   }, [selectedSkin])
 
   // ── Advance to next level from LEVEL_COMPLETE screen ────────────────────────
-  const handleNextLevel = useCallback(() => {
+  const handleNextLevel = useCallback(async () => {
     const s = gameRef.current
     if (s.gamePhase !== 'LEVEL_COMPLETE') return
+
+    await showInterstitialAd()
+
     s.wallsCleared = 0
     s.levelMaxMult = 0
     s.levelFitSum = 0
@@ -1714,6 +1745,15 @@ export default function GapRunner() {
           )}
         </div>
       )}
+
+      {/* Build number */}
+      <div style={{
+        position: 'fixed', bottom: 4, right: 6, zIndex: 1,
+        color: 'rgba(0,0,0,0.15)', fontFamily: 'monospace', fontSize: 8,
+        pointerEvents: 'none',
+      }}>
+        v0.2.0
+      </div>
     </div>
   )
 }
